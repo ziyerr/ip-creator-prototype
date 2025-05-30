@@ -413,3 +413,22 @@ VOLCENGINE_SECRET_ACCESS_KEY=your_volcengine_secret_access_key_here
 
 ---
 *项目状态: 活跃开发中 | 最后更新: 2025-05-30 | 三种风格提示词全部优化完成* 
+
+# Git 推送到 GitHub Main 分支任务
+
+## 任务目标
+将当前代码覆盖推送到GitHub的默认分支main
+
+## 待完成步骤
+- [ ] 检查当前git状态
+- [ ] 添加所有文件到暂存区
+- [ ] 提交所有更改
+- [ ] 推送到GitHub main分支
+- [ ] 验证推送成功
+
+## 进度跟踪
+开始时间: 2024年执行中...
+
+## 注意事项
+- 确保有GitHub仓库的推送权限
+- 这将覆盖远程main分支的内容 
