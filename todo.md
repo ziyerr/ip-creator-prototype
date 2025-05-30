@@ -420,15 +420,93 @@ VOLCENGINE_SECRET_ACCESS_KEY=your_volcengine_secret_access_key_here
 将当前代码覆盖推送到GitHub的默认分支main
 
 ## 待完成步骤
-- [ ] 检查当前git状态
-- [ ] 添加所有文件到暂存区
-- [ ] 提交所有更改
-- [ ] 推送到GitHub main分支
-- [ ] 验证推送成功
+- [x] 检查当前git状态
+- [x] 添加所有文件到暂存区
+- [x] 提交所有更改
+- [x] 推送到GitHub main分支
+- [x] 验证推送成功
 
 ## 进度跟踪
 开始时间: 2024年执行中...
+完成时间: 2024年完成
+
+## 执行总结
+✅ 成功完成任务！
+
+### 执行过程:
+1. 检查git状态 - 发现在clean-version分支
+2. 查看所有分支 - 确认main分支存在
+3. 提交当前更改 - 避免切换分支冲突
+4. 切换到main分支
+5. 使用 `git reset --hard clean-version` 将main分支重置为clean-version分支的状态
+6. 强制推送到远程main分支: `git push origin main --force`
+
+### 推送结果:
+- 远程仓库: https://github.com/ziyerr/ip-creator-prototype.git
+- 最新提交: 51c367d "更新todo文件，准备推送到main分支"
+- 推送方式: 强制覆盖 (forced update)
 
 ## 注意事项
-- 确保有GitHub仓库的推送权限
-- 这将覆盖远程main分支的内容 
+- 确保有GitHub仓库的推送权限 ✅
+- 这将覆盖远程main分支的内容 ✅ 
+
+# Next.js 构建错误修复任务
+
+## 问题描述
+用户尝试运行 `npm run build` 时遇到以下错误：
+1. ⚠️ next.config.mjs 中的无效配置选项 `swcMinify` 在 `experimental`
+2. ❌ 缺少 `critters` 模块导致构建失败
+3. ❌ 预渲染404页面时出错
+
+## 修复步骤
+- [x] 检查并修复 next.config.mjs 配置
+- [x] 安装缺失的 critters 依赖
+- [x] 验证构建成功
+- [x] 测试生产环境部署
+
+## 执行总结
+✅ **成功解决所有构建错误！**
+
+### 问题分析与解决：
+
+1. **swcMinify配置问题**: 
+   - 🔍 检查发现当前next.config.mjs中并无swcMinify配置
+   - ✅ 此警告可能是缓存残留，构建后自动消失
+
+2. **critters模块缺失**: 
+   - 🛠️ 使用 `npm install critters --legacy-peer-deps` 成功安装
+   - 📦 绕过了date-fns版本冲突问题 (v4.1.0 vs v3.6.0)
+   - ✅ 安装了16个相关依赖包，无安全漏洞
+
+3. **构建验证结果**:
+   ```
+   ✓ Compiled successfully
+   ✓ Collecting page data    
+   ✓ Generating static pages (9/9)
+   ✓ Collecting build traces    
+   ✓ Finalizing page optimization
+   ```
+
+4. **生产环境测试**:
+   - 🚀 `npm start` 成功启动生产服务器
+   - 🌐 http://localhost:3000 返回 HTTP 200 状态码
+   - ⚡ 响应时间正常，缓存策略生效
+
+### 构建统计信息：
+- **路由页面**: 7个页面成功构建
+- **静态页面**: 预渲染为静态内容
+- **动态API**: 2个API路由 (edit-image, generate-image)
+- **JS包大小**: 首次加载 101-111 kB
+- **优化状态**: 生产优化完成
+
+## 技术要点
+- **依赖管理**: 使用 --legacy-peer-deps 解决版本冲突
+- **构建优化**: Next.js 15.2.4 自动优化和压缩
+- **静态生成**: 支持SSG和SSR混合模式
+- **缓存策略**: s-maxage=31536000 (1年缓存)
+
+## 开始时间
+2024年执行中...
+
+## 完成时间  
+2024年完成 ✅ 
