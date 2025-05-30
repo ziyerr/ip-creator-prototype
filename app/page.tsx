@@ -28,6 +28,7 @@ export default function HomePage() {
   const [generatedImages, setGeneratedImages] = useState<Array<{ id: string; url: string; style: string }>>([])
   const [showResults, setShowResults] = useState(false)
   const [errorMessage, setErrorMessage] = useState("")
+  const [imageLoadStates, setImageLoadStates] = useState<Record<string, 'loading' | 'loaded' | 'error'>>({})
 
   const router = useRouter()
 
@@ -98,30 +99,30 @@ export default function HomePage() {
     console.log('开始生成流程...')
     setIsGenerating(true)
     setGenerationProgress(0)
-    setGenerationStage("准备生成IP形象...")
+    setGenerationStage("🔍 分析上传图片中...")
     setShowResults(false)
     setErrorMessage("")
 
     try {
-      // 直接使用图像编辑API生成
-      console.log('开始使用图像编辑API生成...')
-      setGenerationProgress(20)
-
-      // 根据选择的风格生成提示词
-      setGenerationStage("准备生成提示...")
-      setGenerationProgress(40)
-
-      const stylePrompts = {
-        cute: "Q版可爱风格，卡通头像，圆润比例，大眼睛，明快配色，可爱表情，二次元风格",
-        toy: "潮玩玩具风格，3D等距视角，软质塑料材质，精致细节，玩具质感，立体造型",
-        cyber: "赛博科幻风格，高饱和霓虹色，未来电子纹理，科技感，电子线路纹理，未来感造型"
-      }
-
-      const basePrompt = stylePrompts[selectedStyle as keyof typeof stylePrompts] || stylePrompts.cute
-      const fullPrompt = `${basePrompt}${customInput ? `，${customInput}` : ""}`
+      // 模拟图片分析步骤
+      await new Promise(resolve => setTimeout(resolve, 800))
+      setGenerationProgress(15)
+      setGenerationStage("👤 识别人物特征与性别...")
+      
+      await new Promise(resolve => setTimeout(resolve, 600))
+      setGenerationProgress(25)
+      setGenerationStage("🎨 准备风格模板...")
+      
+      // 使用新的API和提示词模板系统
+      console.log('开始使用麻雀API + gpt-image-1生成...')
+      setGenerationProgress(35)
+      setGenerationStage("📝 构建个性化提示词...")
+      
+      await new Promise(resolve => setTimeout(resolve, 500))
+      setGenerationProgress(45)
 
       // 3. 调用AI生成图片
-      setGenerationStage("AI正在生成您的专属IP形象...")
+      setGenerationStage("🤖 AI正在生成您的专属IP形象...")
       setGenerationProgress(60)
 
       const results: Array<{ id: string; url: string; style: string }> = []
@@ -129,13 +130,19 @@ export default function HomePage() {
       // 生成3个不同的方案
       console.log('开始生成3个方案...')
       for (let i = 0; i < 3; i++) {
-        const variantPrompt = `${fullPrompt}，方案${String.fromCharCode(65 + i)}，${i === 0 ? '经典版本' : i === 1 ? '创意变化' : '个性定制'}`
-        console.log(`生成方案${i + 1}，提示词:`, variantPrompt)
+        const variantSuffix = i === 0 ? '经典版本' : i === 1 ? '创意变化' : '个性定制'
+        console.log(`生成方案${i + 1}，风格: ${selectedStyle}，变体: ${variantSuffix}`)
+
+        // 更新进度提示
+        setGenerationStage(`✨ 正在生成方案${String.fromCharCode(65 + i)}（${variantSuffix}）...`)
+        setGenerationProgress(60 + i * 8)
 
         try {
           const generatedImageUrl = await generateImageWithReference({
-            prompt: variantPrompt,
+            prompt: `方案${String.fromCharCode(65 + i)}，${variantSuffix}`, // 这个会被模板覆盖
             imageFile: uploadedImage,
+            style: selectedStyle as 'cute' | 'toy' | 'cyber',
+            customRequirements: customInput || undefined,
           })
           console.log(`方案${i + 1}生成成功:`, generatedImageUrl)
 
@@ -144,6 +151,12 @@ export default function HomePage() {
             url: generatedImageUrl,
             style: `方案${String.fromCharCode(65 + i)}`
           })
+          
+          // 每生成一个方案后更新进度
+          setGenerationProgress(60 + (i + 1) * 10)
+          setGenerationStage(`✅ 方案${String.fromCharCode(65 + i)}生成完成！`)
+          await new Promise(resolve => setTimeout(resolve, 300))
+          
         } catch (error) {
           console.error(`生成方案${i + 1}时出错:`, error)
           // 即使出错也添加占位符，保证用户体验
@@ -153,23 +166,25 @@ export default function HomePage() {
             style: `方案${String.fromCharCode(65 + i)}`
           })
         }
-
-        setGenerationProgress(60 + (i + 1) * 10)
       }
 
       // 4. 完成生成
-      setGenerationStage("完成生成！")
+      setGenerationStage("🎉 所有方案生成完成！")
+      setGenerationProgress(95)
+      
+      await new Promise(resolve => setTimeout(resolve, 500))
       setGenerationProgress(100)
+      setGenerationStage("✨ 展示您的专属IP形象...")
 
       setTimeout(() => {
         setGeneratedImages(results)
         setIsGenerating(false)
         setShowResults(true)
-      }, 500)
+      }, 800)
 
     } catch (error) {
       console.error('生成过程中出错:', error)
-      setGenerationStage("生成失败")
+      setGenerationStage("❌ 生成失败")
       setErrorMessage(error instanceof Error ? error.message : "生成过程中出现未知错误，请重试")
 
       // 显示错误提示，但仍然提供占位符结果
@@ -223,32 +238,52 @@ export default function HomePage() {
         {/* 动感色块背景 */}
         <div className="absolute -top-24 -left-24 w-96 h-96 bg-gradient-to-br from-pink-300/40 via-blue-300/30 to-purple-300/30 rounded-full blur-3xl opacity-60 animate-pulse z-0" />
         <div className="absolute bottom-0 right-0 w-80 h-80 bg-gradient-to-tr from-blue-200/40 via-purple-200/30 to-pink-200/30 rounded-full blur-2xl opacity-50 animate-pulse z-0" />
-        <div className="relative z-10 w-full max-w-5xl mx-auto flex flex-col lg:flex-row gap-8 items-stretch justify-center">
+        <div className="relative z-10 w-full max-w-7xl mx-auto flex flex-col lg:flex-row gap-8 items-stretch justify-center">
           {/* 左侧：上传 & 选项 */}
-          <div className="flex-1 bg-white/90 backdrop-blur-2xl rounded-3xl shadow-2xl border-4 border-blue-100 p-10 flex flex-col justify-between min-h-[520px] h-full transition-all duration-300 hover:shadow-blue-200/60">
+          <div className={`bg-white/90 backdrop-blur-2xl rounded-3xl shadow-2xl border-4 border-blue-100 p-6 flex flex-col justify-between transition-all duration-500 hover:shadow-blue-200/60 ${
+            showResults 
+              ? 'lg:w-[30%] lg:min-w-[320px] min-h-[400px]' 
+              : 'flex-1 p-10 min-h-[520px]'
+          } h-full`}>
             <div>
-              <h2 className="text-5xl font-extrabold mb-3 bg-gradient-to-r from-pink-500 via-blue-500 to-purple-500 bg-clip-text text-transparent tracking-tight drop-shadow flex items-center gap-2">
-                <span role="img" aria-label="闪电">⚡️</span> 一键生成专属 <span className="text-blue-600">IP形象</span>
+              <h2 className={`font-extrabold mb-3 bg-gradient-to-r from-pink-500 via-blue-500 to-purple-500 bg-clip-text text-transparent tracking-tight drop-shadow flex items-center gap-2 ${
+                showResults ? 'text-2xl' : 'text-5xl'
+              }`}>
+                <span role="img" aria-label="闪电">⚡️</span> 
+                {showResults ? 'IP创造师' : '一键生成专属 IP形象'}
               </h2>
-              <p className="text-2xl text-slate-500 mb-10 font-semibold flex items-center gap-2">
-                <span role="img" aria-label="魔法">✨</span> 上传头像，选择风格，AI为您实时生成独特IP形象
-              </p>
+              {!showResults && (
+                <p className="text-2xl text-slate-500 mb-10 font-semibold flex items-center gap-2">
+                  <span role="img" aria-label="魔法">✨</span> 上传头像，选择风格，AI为您实时生成独特IP形象
+                </p>
+              )}
+              
               {/* 图片上传 */}
               <div className="mb-6">
                 <label className="block text-base font-semibold text-slate-700 mb-2">上传头像</label>
                 <div
-                  className={`border-2 border-dashed rounded-2xl p-6 transition-all duration-300 bg-white/60 hover:bg-blue-50/60 shadow-inner ${isDragging ? "border-blue-500 bg-blue-50/80" : "border-slate-300 hover:border-blue-400"}`}
+                  className={`border-2 border-dashed rounded-2xl transition-all duration-300 bg-white/60 hover:bg-blue-50/60 shadow-inner ${
+                    showResults ? 'p-4' : 'p-6'
+                  } ${isDragging ? "border-blue-500 bg-blue-50/80" : "border-slate-300 hover:border-blue-400"}`}
                   onDragOver={handleDragOver}
                   onDragLeave={handleDragLeave}
                   onDrop={handleDrop}
                 >
                   {uploadedImage ? (
-                    <div className="relative group flex items-center justify-center min-h-[176px]">
+                    <div className="relative group flex items-center justify-center">
                       <img
-                        src={URL.createObjectURL(uploadedImage) || "/placeholder.svg"}
+                        src={URL.createObjectURL(uploadedImage)}
                         alt="上传的头像"
-                        className="max-h-64 max-w-full object-contain rounded-xl shadow-lg ring-2 ring-blue-200/30 group-hover:scale-105 transition-transform duration-300 bg-white"
-                        style={{ background: '#fff' }}
+                        className={`object-contain rounded-xl shadow-lg ring-2 ring-blue-200/30 group-hover:scale-105 transition-transform duration-300 bg-white ${
+                          showResults ? 'max-h-32 max-w-full' : 'max-h-64 max-w-full'
+                        }`}
+                        onError={(e) => {
+                          console.error('图片加载失败');
+                          e.currentTarget.src = "/placeholder.svg";
+                        }}
+                        onLoad={() => {
+                          console.log('图片加载成功');
+                        }}
                       />
                       <button
                         onClick={removeImage}
@@ -259,11 +294,15 @@ export default function HomePage() {
                     </div>
                   ) :
                     <label className="block cursor-pointer">
-                      <div className="text-center py-8">
-                        <Upload className="w-12 h-12 text-blue-400 mx-auto mb-3 drop-shadow" />
+                      <div className={`text-center ${showResults ? 'py-4' : 'py-8'}`}>
+                        <Upload className={`text-blue-400 mx-auto mb-3 drop-shadow ${showResults ? 'w-8 h-8' : 'w-12 h-12'}`} />
                         <p className="text-slate-700 font-semibold mb-1">上传您的头像</p>
-                        <p className="text-slate-400 text-base">拖拽图片到此处，或点击选择文件</p>
-                        <p className="text-slate-300 text-xs mt-2">支持 JPG、PNG 格式</p>
+                        {!showResults && (
+                          <>
+                            <p className="text-slate-400 text-base">拖拽图片到此处，或点击选择文件</p>
+                            <p className="text-slate-300 text-xs mt-2">支持 JPG、PNG 格式</p>
+                          </>
+                        )}
                       </div>
                       <input
                         type="file"
@@ -275,42 +314,74 @@ export default function HomePage() {
                   }
                 </div>
               </div>
-              {/* 风格选择 */}
+              
+              {/* 风格选择 - 精简版 */}
               <div className="mb-6">
-                <label className="block text-2xl font-extrabold mb-4 bg-gradient-to-r from-pink-500 via-blue-500 to-purple-500 bg-clip-text text-transparent flex items-center gap-2">
+                <label className={`block font-extrabold mb-4 bg-gradient-to-r from-pink-500 via-blue-500 to-purple-500 bg-clip-text text-transparent flex items-center gap-2 ${
+                  showResults ? 'text-lg' : 'text-2xl'
+                }`}>
                   <span role="img" aria-label="风格">🎨</span> 选择风格
                 </label>
-                <div className="flex gap-5 overflow-x-auto pb-2 hide-scrollbar min-h-[340px]">
+                <div className={`flex gap-3 overflow-x-auto pb-2 hide-scrollbar ${
+                  showResults ? 'flex-col min-h-[200px]' : 'min-h-[340px]'
+                }`}>
                   {styleOptions.map((style) => (
                     <div
                       key={style.id}
-                      className={`min-w-[220px] max-w-xs flex-1 border-4 rounded-3xl px-7 py-8 cursor-pointer transition-all shadow-xl flex flex-col justify-between items-center min-h-[320px] h-full bg-gradient-to-br ${style.id === 'cute' ? 'from-pink-200/80 via-pink-100/60 to-purple-100/60' : style.id === 'toy' ? 'from-yellow-100/80 via-orange-100/60 to-red-100/60' : 'from-cyan-100/80 via-blue-100/60 to-purple-100/60'} backdrop-blur-2xl hover:scale-105 hover:shadow-2xl hover:border-blue-400/80 active:scale-100 group relative ${selectedStyle === style.id ? 'border-blue-700 shadow-[0_0_0_4px_rgba(30,64,175,0.25)] bg-white/90' : 'border-transparent'}`}
+                      className={`border-4 rounded-3xl cursor-pointer transition-all shadow-xl flex items-center backdrop-blur-2xl hover:scale-105 hover:shadow-2xl hover:border-blue-400/80 active:scale-100 group relative ${
+                        showResults 
+                          ? 'min-w-full p-4 h-16 bg-gradient-to-r from-white/80 to-white/60' 
+                          : `min-w-[220px] max-w-xs flex-1 px-7 py-8 flex-col justify-between min-h-[320px] h-full bg-gradient-to-br ${
+                              style.id === 'cute' ? 'from-pink-200/80 via-pink-100/60 to-purple-100/60' : 
+                              style.id === 'toy' ? 'from-yellow-100/80 via-orange-100/60 to-red-100/60' : 
+                              'from-cyan-100/80 via-blue-100/60 to-purple-100/60'
+                            }`
+                      } ${selectedStyle === style.id ? 'border-blue-700 shadow-[0_0_0_4px_rgba(30,64,175,0.25)] bg-white/90' : 'border-transparent'}`}
                       onClick={() => setSelectedStyle(style.id)}
                       style={{ boxShadow: selectedStyle === style.id ? '0 8px 32px 0 rgba(30,64,175,0.18)' : '0 2px 8px 0 rgba(80,80,200,0.08)' }}
                     >
-                      <div className="w-16 h-16 rounded-2xl flex items-center justify-center mb-3 bg-white/60 shadow-lg group-hover:scale-110 transition-transform duration-300">
-                        <style.icon className="w-10 h-10 text-white drop-shadow-lg" />
-                      </div>
-                      <h4 className="font-extrabold text-xl mb-2 tracking-wider text-slate-900 font-[Pacifico,ui-sans-serif] drop-shadow-sm text-center">{style.name}</h4>
-                      <div className="flex flex-wrap gap-2 justify-center mb-2 flex-1 items-end">
-                        {style.features.map((feature, index) => (
-                          <span key={index} className={`px-3 py-1 rounded-full text-xs font-bold ${style.id === 'cute' ? 'bg-pink-100 text-pink-600' : style.id === 'toy' ? 'bg-orange-100 text-orange-600' : 'bg-cyan-100 text-cyan-600'} shadow-sm`}>
-                            {feature}
-                          </span>
-                        ))}
-                      </div>
-                      <div className={`mt-2 text-sm font-semibold italic ${style.id === 'cute' ? 'text-pink-500' : style.id === 'toy' ? 'text-orange-500' : 'text-cyan-500'} text-center`}>{style.description}</div>
-                      <div className="absolute top-4 right-4">
-                        {selectedStyle === style.id && (
-                          <span className="inline-block w-8 h-8 bg-white border-4 border-blue-700 rounded-full shadow-lg flex items-center justify-center animate-bounce">
-                            <svg width="22" height="22" fill="none" viewBox="0 0 22 22"><circle cx="11" cy="11" r="9" stroke="#2563eb" strokeWidth="2.5" fill="#fff"/><path d="M7 11.5l3 3 5-5" stroke="#2563eb" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
-                          </span>
-                        )}
-                      </div>
+                      {showResults ? (
+                        // 精简版显示
+                        <>
+                          <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-white/60 shadow-lg mr-3">
+                            <style.icon className="w-5 h-5 text-white drop-shadow-lg" />
+                          </div>
+                          <h4 className="font-bold text-sm tracking-wider text-slate-900 flex-1">{style.name}</h4>
+                          {selectedStyle === style.id && (
+                            <span className="inline-block w-6 h-6 bg-white border-2 border-blue-700 rounded-full shadow-lg flex items-center justify-center">
+                              <svg width="16" height="16" fill="none" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" stroke="#2563eb" strokeWidth="1.5" fill="#fff"/><path d="M5 8l2 2 4-4" stroke="#2563eb" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                            </span>
+                          )}
+                        </>
+                      ) : (
+                        // 完整版显示
+                        <>
+                          <div className="w-16 h-16 rounded-2xl flex items-center justify-center mb-3 bg-white/60 shadow-lg group-hover:scale-110 transition-transform duration-300">
+                            <style.icon className="w-10 h-10 text-white drop-shadow-lg" />
+                          </div>
+                          <h4 className="font-extrabold text-xl mb-2 tracking-wider text-slate-900 font-[Pacifico,ui-sans-serif] drop-shadow-sm text-center">{style.name}</h4>
+                          <div className="flex flex-wrap gap-2 justify-center mb-2 flex-1 items-end">
+                            {style.features.map((feature, index) => (
+                              <span key={index} className={`px-3 py-1 rounded-full text-xs font-bold ${style.id === 'cute' ? 'bg-pink-100 text-pink-600' : style.id === 'toy' ? 'bg-orange-100 text-orange-600' : 'bg-cyan-100 text-cyan-600'} shadow-sm`}>
+                                {feature}
+                              </span>
+                            ))}
+                          </div>
+                          <div className={`mt-2 text-sm font-semibold italic ${style.id === 'cute' ? 'text-pink-500' : style.id === 'toy' ? 'text-orange-500' : 'text-cyan-500'} text-center`}>{style.description}</div>
+                          <div className="absolute top-4 right-4">
+                            {selectedStyle === style.id && (
+                              <span className="inline-block w-8 h-8 bg-white border-4 border-blue-700 rounded-full shadow-lg flex items-center justify-center animate-bounce">
+                                <svg width="22" height="22" fill="none" viewBox="0 0 22 22"><circle cx="11" cy="11" r="9" stroke="#2563eb" strokeWidth="2.5" fill="#fff"/><path d="M7 11.5l3 3 5-5" stroke="#2563eb" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                              </span>
+                            )}
+                          </div>
+                        </>
+                      )}
                     </div>
                   ))}
                 </div>
               </div>
+              
               {/* 自定义输入 */}
               <div className="mb-6">
                 <label className="block text-base font-semibold text-slate-700 mb-2">
@@ -320,36 +391,39 @@ export default function HomePage() {
                   value={customInput}
                   onChange={(e) => setCustomInput(e.target.value)}
                   placeholder="例如：希望更加可爱一些，添加一些科技元素..."
-                  className="w-full h-16 p-3 border border-slate-200 rounded-xl resize-none focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent text-slate-700 placeholder-slate-400 text-base bg-white/60 shadow-inner"
+                  className={`w-full p-3 border border-slate-200 rounded-xl resize-none focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent text-slate-700 placeholder-slate-400 text-base bg-white/60 shadow-inner ${
+                    showResults ? 'h-12' : 'h-16'
+                  }`}
                 />
                 <div className="text-right mt-1">
                   <span className="text-xs text-slate-400">{customInput.length}/200字符</span>
                 </div>
               </div>
-            </div>
-            {/* 生成按钮固定底部 */}
-            <div className="mt-2 hidden">
-              <button
-                onClick={handleGenerate}
-                disabled={!canGenerate || isGenerating}
-                className="w-full bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 disabled:bg-slate-300 disabled:cursor-not-allowed text-white py-4 rounded-2xl font-extrabold text-xl shadow-xl transition-all flex items-center justify-center space-x-2 tracking-wide"
-              >
-                {isGenerating ? (
-                  <>
-                    <div className="animate-spin w-6 h-6 border-2 border-white border-t-transparent rounded-full"></div>
-                    <span>生成中...</span>
-                  </>
-                ) : (
-                  <>
-                    <Zap className="w-6 h-6" />
-                    <span>生成我的IP</span>
-                  </>
-                )}
-              </button>
+              
+              {/* 重新生成按钮 - 仅在结果显示时出现 */}
+              {showResults && (
+                <button
+                  onClick={handleRegenerateAll}
+                  className="bg-white hover:bg-gray-50 text-gray-900 font-semibold text-base flex items-center space-x-2 transition-all duration-300 transform hover:scale-105 px-4 py-2 rounded-xl shadow-md border border-gray-200 hover:border-gray-300"
+                  style={{ 
+                    boxShadow: '0 2px 8px 0 rgba(0, 0, 0, 0.08)'
+                  }}
+                >
+                  <svg className="w-5 h-5 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  <span>重新生成</span>
+                </button>
+              )}
             </div>
           </div>
+          
           {/* 右侧：生成进度 & 预览 */}
-          <div className="flex-1 bg-white/80 backdrop-blur-xl rounded-3xl shadow-2xl border border-slate-200 p-8 flex flex-col justify-between min-h-[480px] h-full transition-all duration-300 hover:shadow-blue-200/60">
+          <div className={`bg-white/80 backdrop-blur-xl rounded-3xl shadow-2xl border border-slate-200 p-8 flex flex-col justify-between transition-all duration-500 hover:shadow-blue-200/60 ${
+            showResults 
+              ? 'lg:w-[70%] min-h-[600px]' 
+              : 'flex-1 min-h-[480px]'
+          } h-full`}>
             <h3 className="text-2xl font-bold text-slate-900 mb-6 tracking-tight drop-shadow-sm">实时生成预览</h3>
             <div className="flex-1 flex flex-col justify-center">
               {!isGenerating && !showResults && (
@@ -405,34 +479,149 @@ export default function HomePage() {
                     <h4 className="text-xl font-bold text-slate-900">生成结果</h4>
                     <button
                       onClick={handleRegenerateAll}
-                      className="text-blue-600 hover:text-blue-700 font-semibold text-base flex items-center space-x-1"
+                      className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white font-bold text-base flex items-center space-x-2 transition-all duration-300 transform hover:scale-105 px-4 py-2 rounded-xl shadow-lg border border-white/20"
+                      style={{ 
+                        boxShadow: '0 4px 16px 0 rgba(168, 85, 247, 0.4), 0 1px 2px rgba(0,0,0,0.3)',
+                        textShadow: '0 1px 2px rgba(0,0,0,0.3)'
+                      }}
                     >
-                      <ArrowRight className="w-5 h-5" />
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                      </svg>
                       <span>重新生成</span>
                     </button>
                   </div>
-                  <div className="grid grid-cols-3 gap-4">
-                    {generatedImages.map((image) => (
+                  
+                  {/* 图片展示网格 */}
+                  <div className={`grid gap-6 ${
+                    showResults ? 'grid-cols-1 lg:grid-cols-2 xl:grid-cols-3' : 'grid-cols-1'
+                  }`}>
+                    {generatedImages.map((image, index) => (
                       <div
                         key={image.id}
-                        className="border border-slate-200 rounded-xl p-3 hover:shadow-xl transition-shadow cursor-pointer bg-white/80 backdrop-blur group relative overflow-hidden"
+                        className="border-2 border-slate-200 rounded-2xl p-4 hover:shadow-xl transition-all cursor-pointer bg-white/90 backdrop-blur group relative overflow-hidden hover:border-blue-400/60"
                       >
-                        <img
-                          src={image.url || "/placeholder.svg"}
-                          alt={image.style}
-                          className="w-full aspect-square object-cover rounded-xl mb-2 shadow-lg group-hover:scale-105 transition-transform duration-300 border-2 border-transparent group-hover:border-blue-400/40"
-                        />
-                        <p className="text-base font-semibold text-slate-700 text-center">{image.style}</p>
-                        <div className="absolute inset-0 pointer-events-none rounded-xl group-hover:ring-2 group-hover:ring-blue-400/30 transition-all duration-300" />
+                        <div className={`${showResults ? 'flex flex-col items-center' : 'flex items-center gap-4'}`}>
+                          {/* 图片容器 */}
+                          <div className="relative flex-shrink-0 w-full">
+                            {/* 加载状态背景 */}
+                            {imageLoadStates[image.id] === 'loading' && (
+                              <div className="absolute inset-0 bg-slate-100 rounded-xl flex items-center justify-center">
+                                <div className="animate-spin w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full"></div>
+                              </div>
+                            )}
+                            
+                            <img
+                              src={image.url}
+                              alt={image.style}
+                              className={`w-full object-cover rounded-xl shadow-lg group-hover:scale-105 transition-transform duration-300 border-2 border-slate-100 ${
+                                showResults ? 'aspect-square' : 'h-32'
+                              }`}
+                              onError={(e) => {
+                                console.error('生成图片加载失败:', image.url);
+                                setImageLoadStates(prev => ({ ...prev, [image.id]: 'error' }));
+                                // 尝试添加时间戳强制刷新
+                                const currentSrc = e.currentTarget.src;
+                                if (!currentSrc.includes('?t=')) {
+                                  e.currentTarget.src = `${image.url}?t=${Date.now()}`;
+                                } else {
+                                  e.currentTarget.src = "/placeholder.svg?height=300&width=300";
+                                }
+                              }}
+                              onLoad={() => {
+                                console.log('生成图片加载成功:', image.url);
+                                setImageLoadStates(prev => ({ ...prev, [image.id]: 'loaded' }));
+                              }}
+                              onLoadStart={() => {
+                                setImageLoadStates(prev => ({ ...prev, [image.id]: 'loading' }));
+                              }}
+                            />
+                            
+                            {/* 错误状态显示 */}
+                            {imageLoadStates[image.id] === 'error' && (
+                              <div className="absolute inset-0 bg-red-50 border-2 border-red-200 rounded-xl flex items-center justify-center">
+                                <div className="text-center">
+                                  <div className="text-red-500 text-xs font-semibold">加载失败</div>
+                                  <button 
+                                    onClick={(e) => {
+                                      setImageLoadStates(prev => ({ ...prev, [image.id]: 'loading' }));
+                                      // 重新加载图片
+                                      const imgElement = e.currentTarget.parentElement?.parentElement?.querySelector('img');
+                                      if (imgElement) {
+                                        imgElement.src = `${image.url}?t=${Date.now()}`;
+                                      }
+                                    }}
+                                    className="text-xs text-blue-600 hover:text-blue-700 font-semibold mt-1"
+                                  >
+                                    重试
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+                            
+                            {/* hover效果 */}
+                            {imageLoadStates[image.id] === 'loaded' && (
+                              <div className="absolute inset-0 flex items-center justify-center bg-white/80 opacity-0 group-hover:opacity-100 transition-opacity duration-300 rounded-xl">
+                                <span className="text-xs text-blue-600 font-semibold">点击查看大图</span>
+                              </div>
+                            )}
+                          </div>
+                          
+                          {/* 方案信息 */}
+                          <div className={`${showResults ? 'w-full mt-4' : 'flex-1'}`}>
+                            <h5 className={`font-bold text-slate-800 mb-2 ${showResults ? 'text-center text-lg' : 'text-lg'}`}>{image.style}</h5>
+                            <p className={`text-sm text-slate-600 mb-3 ${showResults ? 'text-center' : ''}`}>
+                              {index === 0 && "经典版本 - 保持原有风格特色"}
+                              {index === 1 && "创意变化 - 在原基础上增加创新元素"}
+                              {index === 2 && "个性定制 - 融入更多个性化特色"}
+                            </p>
+                            <div className={`flex gap-2 ${showResults ? 'justify-center flex-wrap' : ''}`}>
+                              <button
+                                onClick={() => {
+                                  // 打开大图预览
+                                  window.open(image.url, '_blank');
+                                }}
+                                className="px-4 py-2 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-lg font-semibold text-sm transition-colors"
+                              >
+                                查看大图
+                              </button>
+                              <button
+                                onClick={() => {
+                                  // 下载图片
+                                  const link = document.createElement('a');
+                                  link.href = image.url;
+                                  link.download = `ip-avatar-${image.style}.png`;
+                                  link.click();
+                                }}
+                                className="px-4 py-2 bg-green-100 hover:bg-green-200 text-green-700 rounded-lg font-semibold text-sm transition-colors"
+                              >
+                                下载图片
+                              </button>
+                            </div>
+                          </div>
+                        </div>
                       </div>
                     ))}
                   </div>
-                  <button
-                    onClick={() => router.push("/export")}
-                    className="w-full bg-gradient-to-r from-green-500 to-blue-500 hover:from-green-600 hover:to-blue-600 text-white py-4 rounded-2xl font-bold text-lg shadow-xl transition-colors mt-2"
-                  >
-                    选择方案并导出
-                  </button>
+                  
+                  {/* 突出的导出按钮 */}
+                  <div className="border-t-2 border-slate-200 pt-6 mt-6">
+                    <div className="text-center mb-4">
+                      <h4 className="text-lg font-bold text-slate-800 mb-2">🎉 生成完成！</h4>
+                      <p className="text-slate-600">选择您最喜欢的方案并进行导出</p>
+                    </div>
+                    <button
+                      onClick={() => router.push("/export")}
+                      className="w-full bg-gradient-to-r from-emerald-500 via-blue-500 to-purple-500 hover:from-emerald-600 hover:via-blue-600 hover:to-purple-600 text-white py-4 px-6 rounded-2xl font-bold text-lg shadow-2xl transition-all duration-300 transform hover:scale-105 flex items-center justify-center space-x-3 border-2 border-white/20"
+                      style={{ 
+                        boxShadow: '0 8px 32px 0 rgba(34, 197, 94, 0.25), 0 4px 16px 0 rgba(59, 130, 246, 0.15)' 
+                      }}
+                    >
+                      <Sparkles className="w-6 h-6" />
+                      <span>选择方案并导出高清图片</span>
+                      <ArrowRight className="w-6 h-6" />
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
@@ -516,7 +705,7 @@ export default function HomePage() {
       </footer>
 
       {/* 悬浮吸底按钮，任何时候都显示在第一屏底部 */}
-      {canGenerate && (
+      {canGenerate && !showResults && (
         <div className="fixed bottom-0 left-0 w-full z-50 flex justify-center pointer-events-none">
           <button
             onClick={handleGenerate}
