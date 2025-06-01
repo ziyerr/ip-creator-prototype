@@ -8,7 +8,7 @@ set -e
 # 配置变量
 APP_NAME="ip-creator"
 APP_DIR="/var/www/${APP_NAME}"
-REPO_URL="https://github.com/YOUR_USERNAME/ip-creator.git"  # 替换为你的仓库
+REPO_URL="https://github.com/mahuakeji/ip-creator.git"  # 更新为实际仓库地址
 BRANCH="main"
 NODE_ENV="production"
 
@@ -181,7 +181,7 @@ setup_nginx() {
     sudo tee /etc/nginx/sites-available/${APP_NAME} > /dev/null << EOF
 server {
     listen 80;
-    server_name YOUR_DOMAIN.COM;  # 替换为你的域名或IP
+    server_name 14.103.140.197;  # 火山引擎服务器IP地址
 
     # 客户端请求体大小限制（支持大图片上传）
     client_max_body_size 50M;

@@ -119,9 +119,9 @@ module.exports = {
   deploy: {
     production: {
       user: 'ubuntu',
-      host: 'YOUR_SERVER_IP', // 替换为火山引擎服务器IP
+      host: '14.103.140.197', // 火山引擎服务器IP
       ref: 'origin/main',
-      repo: 'https://github.com/YOUR_USERNAME/ip-creator.git', // 替换为你的Git仓库
+      repo: 'https://github.com/mahuakeji/ip-creator.git', // 实际Git仓库
       path: '/var/www/ip-creator',
       
       // 部署前执行
