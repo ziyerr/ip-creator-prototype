@@ -1,3 +1,51 @@
+# 🔧 紧急修复：浏览器缓存导致API函数不存在错误 最新修复
+
+## 问题诊断
+通过用户日志分析发现：
+```
+调用生成图片API，提示词: ...
+API响应完整数据: {"taskId": "task_1748765635829_m17hew6qo", "status": "pending", ...}
+生成过程中出错: Error: API响应格式错误：未找到图片URLs
+```
+
+**根本原因**：虽然后端已升级为异步任务架构，但浏览器缓存了旧版本的JavaScript代码，导致前端仍在调用已删除的`generateImage`函数。
+
+## 修复措施
+
+### 1. 清理遗留代码 ✅
+- **test-api页面**：修复了 `app/test-api/page.tsx` 中的错误导入
+  - ❌ `import { generateImage } from "@/lib/api"`
+  - ✅ `import { generateImageWithReference } from "@/lib/api"`
+- **API适配**：更新测试页面使用异步任务API模式
+
+### 2. 强制清除浏览器缓存 ✅
+在 `next.config.mjs` 中添加：
+- **动态构建ID**：`build-${Date.now()}` 每次构建生成唯一ID
+- **缓存控制头**：为页面设置 `no-cache, no-store, must-revalidate`
+- **静态资源优化**：静态文件保持长期缓存，但构建ID变化强制更新
+
+### 3. 部署验证 ✅
+- **提交ID**：8b7287e
+- **Vercel部署**：自动触发，新buildID强制客户端更新
+- **预期效果**：用户刷新页面后将获得最新的异步任务API代码
+
+## 技术原理
+```
+旧架构缓存：
+浏览器 → 旧JS文件 → generateImage() → 不存在 → Error
+
+新架构清除：
+浏览器 → 强制更新 → 新JS文件 → generateImageWithReference() → 正常工作
+```
+
+## 验证方法
+用户需要：
+1. **硬刷新**：Ctrl+F5 或 Cmd+Shift+R
+2. **清除缓存**：或者清除浏览器缓存
+3. **重新测试**：上传图片并生成，应该看到轮询进度更新
+
+---
+
 # 异步任务架构重大升级 🚀 最新完成
 
 ## 问题分析
