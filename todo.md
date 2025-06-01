@@ -584,3 +584,24 @@ VOLCENGINE_SECRET_ACCESS_KEY=your_volcengine_secret_access_key_here
 
 🚀 **项目现已在线运行！** 
 访问 https://ip-creator.vercel.app 体验AI头像生成功能 
+
+# Vercel 自动部署配置任务
+
+## 任务目标
+设置Vercel与GitHub仓库的自动集成，实现每次代码提交自动部署
+
+## 配置步骤
+- [ ] 连接Vercel项目到GitHub仓库
+- [ ] 配置自动部署分支（main分支）
+- [ ] 设置部署触发条件
+- [ ] 测试自动部署功能
+- [ ] 验证部署流程
+- [ ] 配置部署通知（可选）
+
+## 当前状态
+- [x] 项目已手动部署到Vercel
+- [x] GitHub仓库代码已同步
+- [ ] 未设置自动部署集成
+
+## 开始时间
+2024年执行中... 
