@@ -14,13 +14,15 @@ interface GenerateImageParams {
   imageFile: File;
   style: 'cute' | 'toy' | 'cyber';
   customRequirements?: string;
+  mode?: 'sync' | 'async'; // 新增模式选择
 }
 
+// 同步模式图片生成（Edge Runtime，20秒超时）
 export async function generateImageWithReference(
   params: GenerateImageParams
 ): Promise<string[]> {
   try {
-    console.log('调用Edge Runtime图片生成API...');
+    console.log('调用同步图片生成API（Edge Runtime）...');
     
     // 构建完整提示词
     const stylePrompt = STYLE_PROMPTS[params.style];
@@ -31,14 +33,14 @@ export async function generateImageWithReference(
       fullPrompt += ` 额外要求: ${params.customRequirements.trim()}`;
     }
     
-    console.log('调用Edge Runtime生成图片API，提示词:', fullPrompt.substring(0, 200) + '...');
+    console.log('调用生成图片API，提示词:', fullPrompt.substring(0, 200) + '...');
     
     // 准备请求数据
     const formData = new FormData();
     formData.append('prompt', fullPrompt);
     formData.append('image', params.imageFile);
     
-    // 调用API - Edge Runtime支持更长处理时间
+    // 调用API
     const response = await fetch('/api/generate-image', {
       method: 'POST',
       body: formData,
@@ -46,23 +48,117 @@ export async function generateImageWithReference(
     
     if (!response.ok) {
       if (response.status === 408) {
-        throw new Error('图片生成超时（Edge Runtime 20秒限制），请重试或选择其他风格');
+        throw new Error('图片生成超时，建议尝试异步模式');
       }
       throw new Error(`API调用失败: ${response.status}`);
     }
     
     const data = await response.json();
-    console.log('Edge Runtime API响应:', data);
+    console.log('API响应:', data);
     
     if (!data.success || !data.urls || !Array.isArray(data.urls)) {
       throw new Error('API响应格式错误：未找到图片URLs');
     }
     
-    console.log(`Edge Runtime生成成功，获得${data.urls.length}张图片URL`);
+    console.log(`生成成功，获得${data.urls.length}张图片URL`);
     return data.urls;
     
   } catch (error) {
-    console.error('Edge Runtime图片生成API调用失败:', error);
+    console.error('图片生成API调用失败:', error);
+    throw error;
+  }
+}
+
+// 异步模式图片生成（无时间限制，支持真正的3张独立图片）
+export async function generateImageAsync(
+  params: GenerateImageParams,
+  onProgress?: (status: { progress: number; message: string; status: string }) => void
+): Promise<string[]> {
+  try {
+    console.log('开始异步图片生成任务...');
+    
+    // 构建完整提示词
+    const stylePrompt = STYLE_PROMPTS[params.style];
+    let fullPrompt = stylePrompt;
+    
+    // 添加自定义需求
+    if (params.customRequirements && params.customRequirements.trim()) {
+      fullPrompt += ` 额外要求: ${params.customRequirements.trim()}`;
+    }
+    
+    // 1. 提交任务
+    const formData = new FormData();
+    formData.append('prompt', fullPrompt);
+    formData.append('image', params.imageFile);
+    
+    const submitResponse = await fetch('/api/generate-image-async', {
+      method: 'POST',
+      body: formData,
+    });
+    
+    if (!submitResponse.ok) {
+      throw new Error(`任务提交失败: ${submitResponse.status}`);
+    }
+    
+    const submitData = await submitResponse.json();
+    const taskId = submitData.taskId;
+    
+    console.log('任务提交成功，ID:', taskId);
+    
+    // 2. 轮询任务状态
+    return new Promise((resolve, reject) => {
+      const pollInterval = setInterval(async () => {
+        try {
+          const queryFormData = new FormData();
+          queryFormData.append('action', 'query');
+          queryFormData.append('taskId', taskId);
+          
+          const queryResponse = await fetch('/api/generate-image-async', {
+            method: 'POST',
+            body: queryFormData,
+          });
+          
+          if (!queryResponse.ok) {
+            throw new Error(`查询失败: ${queryResponse.status}`);
+          }
+          
+          const queryData = await queryResponse.json();
+          
+          // 调用进度回调
+          if (onProgress) {
+            onProgress({
+              progress: queryData.progress,
+              message: queryData.message,
+              status: queryData.status
+            });
+          }
+          
+          console.log(`任务 ${taskId} 状态: ${queryData.status} 进度: ${queryData.progress}%`);
+          
+          if (queryData.status === 'completed') {
+            clearInterval(pollInterval);
+            console.log(`异步任务完成，生成了${queryData.results.length}张图片`);
+            resolve(queryData.results);
+          } else if (queryData.status === 'failed') {
+            clearInterval(pollInterval);
+            reject(new Error(queryData.error || '异步任务失败'));
+          }
+          
+        } catch (error) {
+          clearInterval(pollInterval);
+          reject(error);
+        }
+      }, 3000); // 每3秒查询一次
+      
+      // 2分钟超时
+      setTimeout(() => {
+        clearInterval(pollInterval);
+        reject(new Error('异步任务超时'));
+      }, 120000);
+    });
+    
+  } catch (error) {
+    console.error('异步图片生成失败:', error);
     throw error;
   }
 }

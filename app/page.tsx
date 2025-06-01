@@ -5,7 +5,7 @@ import type React from "react"
 import { useState, useCallback } from "react"
 import { useRouter } from "next/navigation"
 import { Sparkles, Menu, Upload, X, Zap, Palette, Cpu, ArrowRight } from "lucide-react"
-import { generateImageWithReference } from "@/lib/api"
+import { generateImageWithReference, generateImageAsync } from "@/lib/api"
 
 interface StyleOption {
   id: string
@@ -29,6 +29,7 @@ export default function HomePage() {
   const [showResults, setShowResults] = useState(false)
   const [errorMessage, setErrorMessage] = useState("")
   const [imageLoadStates, setImageLoadStates] = useState<Record<string, 'loading' | 'loaded' | 'error'>>({})
+  const [generationMode, setGenerationMode] = useState<'auto' | 'sync' | 'async'>('auto')
 
   const router = useRouter()
 
@@ -106,29 +107,93 @@ export default function HomePage() {
   const handleGenerate = useCallback(async () => {
     if (!uploadedImage || !selectedStyle) return
 
+    setIsGenerating(true);
+    setErrorMessage("");
+    setGenerationProgress(0);
+    setGenerationStage("");
+
     try {
-      // Edge Runtime 同步生成图片
-      console.log('开始调用Edge Runtime生成图片...');
-      setGenerationProgress(20);
-      setGenerationStage("🚀 启动Edge Runtime，支持20秒超时处理...");
+      let generatedImageUrls: string[] = [];
+
+      if (generationMode === 'async') {
+        // 直接使用异步模式
+        console.log('用户选择异步模式生成...');
+        setGenerationStage("🚀 启动异步任务模式...");
+        setGenerationProgress(10);
+
+        generatedImageUrls = await generateImageAsync({
+          prompt: '生成专属IP形象',
+          imageFile: uploadedImage,
+          style: selectedStyle as 'cute' | 'toy' | 'cyber',
+          customRequirements: customInput || undefined,
+        }, (status) => {
+          // 实时更新进度
+          setGenerationProgress(Math.max(10, status.progress));
+          setGenerationStage(status.message);
+        });
+
+      } else if (generationMode === 'sync') {
+        // 直接使用同步模式
+        console.log('用户选择同步模式生成（Edge Runtime）...');
+        setGenerationStage("⚡ 使用Edge Runtime快速生成...");
+        setGenerationProgress(20);
+
+        generatedImageUrls = await generateImageWithReference({
+          prompt: '生成专属IP形象',
+          imageFile: uploadedImage,
+          style: selectedStyle as 'cute' | 'toy' | 'cyber',
+          customRequirements: customInput || undefined,
+        });
+
+      } else {
+        // 自动模式：先尝试同步，失败后回退到异步
+        console.log('自动模式：先尝试Edge Runtime同步生成...');
+        setGenerationStage("⚡ 尝试快速生成（Edge Runtime）...");
+        setGenerationProgress(20);
+
+        try {
+          generatedImageUrls = await generateImageWithReference({
+            prompt: '生成专属IP形象',
+            imageFile: uploadedImage,
+            style: selectedStyle as 'cute' | 'toy' | 'cyber',
+            customRequirements: customInput || undefined,
+          });
+          
+          console.log('Edge Runtime生成成功！');
+
+        } catch (syncError: any) {
+          console.log('Edge Runtime生成失败，回退到异步模式:', syncError.message);
+          
+          if (syncError.message.includes('超时') || syncError.message.includes('timeout')) {
+            setGenerationStage("🔄 检测到超时，自动切换到异步模式...");
+            setGenerationProgress(15);
+            
+            // 短暂延迟让用户看到切换提示
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            
+            generatedImageUrls = await generateImageAsync({
+              prompt: '生成专属IP形象',
+              imageFile: uploadedImage,
+              style: selectedStyle as 'cute' | 'toy' | 'cyber',
+              customRequirements: customInput || undefined,
+            }, (status) => {
+              setGenerationProgress(Math.max(15, status.progress));
+              setGenerationStage(`🔄 异步模式 - ${status.message}`);
+            });
+            
+          } else {
+            throw syncError; // 非超时错误直接抛出
+          }
+        }
+      }
       
-      setGenerationProgress(40);
-      setGenerationStage("🔍 AI正在深度分析上传图片特征...");
-      
-      const generatedImageUrls = await generateImageWithReference({
-        prompt: '生成专属IP形象', // 这个会被模板覆盖
-        imageFile: uploadedImage,
-        style: selectedStyle as 'cute' | 'toy' | 'cyber',
-        customRequirements: customInput || undefined,
-      });
-      
-      console.log(`Edge Runtime生成完成，获得${generatedImageUrls.length}张图片:`, generatedImageUrls);
+      console.log(`生成完成，获得${generatedImageUrls.length}张图片:`, generatedImageUrls);
       
       // 更新进度
       setGenerationProgress(80);
-      setGenerationStage("🎨 Edge Runtime处理完成，准备展示结果...");
+      setGenerationStage("🎨 准备展示生成结果...");
       
-      // 构建结果数组 - 处理多张图片
+      // 构建结果数组
       let results: Array<{ id: string; url: string; style: string }> = [];
       
       if (generatedImageUrls && generatedImageUrls.length > 0) {
@@ -148,7 +213,7 @@ export default function HomePage() {
       
       // 最终进度
       setGenerationProgress(100);
-      setGenerationStage("✨ Edge Runtime生成完成！");
+      setGenerationStage("✨ 生成完成！");
       
       // 短暂延迟后显示结果
       setTimeout(() => {
@@ -160,7 +225,7 @@ export default function HomePage() {
       }, 500);
       
     } catch (error: any) {
-      console.error('Edge Runtime生成过程中出错:', error);
+      console.error('生成过程中出错:', error);
       setIsGenerating(false);
       setGenerationProgress(0);
       setGenerationStage("");
@@ -168,15 +233,17 @@ export default function HomePage() {
       let errorMessage = '未知错误';
       if (error instanceof Error) {
         if (error.message.includes('超时')) {
-          errorMessage = error.message;
+          errorMessage = '图片生成超时，建议选择异步模式重试';
+        } else if (error.message.includes('异步任务')) {
+          errorMessage = '异步任务处理失败，请检查网络连接后重试';
         } else {
           errorMessage = error.message;
         }
       }
       
-      alert(`生成失败: ${errorMessage}，请重试`);
+      alert(`生成失败: ${errorMessage}`);
     }
-  }, [uploadedImage, selectedStyle, customInput])
+  }, [uploadedImage, selectedStyle, customInput, generationMode])
 
   const handleRegenerateAll = useCallback(() => {
     setShowResults(false)
@@ -376,6 +443,79 @@ export default function HomePage() {
                   <span className="text-xs text-slate-400">{customInput.length}/200字符</span>
                 </div>
               </div>
+
+              {/* 生成模式选择 */}
+              {!showResults && (
+                <div className="mb-6">
+                  <label className="block text-base font-semibold text-slate-700 mb-3">
+                    🚀 生成模式
+                  </label>
+                  <div className="grid grid-cols-1 gap-3">
+                    <div
+                      className={`border-2 rounded-xl p-3 cursor-pointer transition-all ${
+                        generationMode === 'auto' 
+                          ? 'border-blue-500 bg-blue-50' 
+                          : 'border-slate-200 bg-white/60 hover:border-blue-300'
+                      }`}
+                      onClick={() => setGenerationMode('auto')}
+                    >
+                      <div className="flex items-center space-x-3">
+                        <div className={`w-4 h-4 rounded-full border-2 ${
+                          generationMode === 'auto' ? 'border-blue-500 bg-blue-500' : 'border-slate-300'
+                        }`}>
+                          {generationMode === 'auto' && <div className="w-full h-full rounded-full bg-white scale-50"></div>}
+                        </div>
+                        <div className="flex-1">
+                          <div className="font-semibold text-slate-800">🤖 智能模式（推荐）</div>
+                          <div className="text-sm text-slate-600">先尝试快速生成，超时自动切换异步模式</div>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div
+                      className={`border-2 rounded-xl p-3 cursor-pointer transition-all ${
+                        generationMode === 'sync' 
+                          ? 'border-blue-500 bg-blue-50' 
+                          : 'border-slate-200 bg-white/60 hover:border-blue-300'
+                      }`}
+                      onClick={() => setGenerationMode('sync')}
+                    >
+                      <div className="flex items-center space-x-3">
+                        <div className={`w-4 h-4 rounded-full border-2 ${
+                          generationMode === 'sync' ? 'border-blue-500 bg-blue-500' : 'border-slate-300'
+                        }`}>
+                          {generationMode === 'sync' && <div className="w-full h-full rounded-full bg-white scale-50"></div>}
+                        </div>
+                        <div className="flex-1">
+                          <div className="font-semibold text-slate-800">⚡ 快速模式</div>
+                          <div className="text-sm text-slate-600">Edge Runtime，20秒内完成或超时</div>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div
+                      className={`border-2 rounded-xl p-3 cursor-pointer transition-all ${
+                        generationMode === 'async' 
+                          ? 'border-blue-500 bg-blue-50' 
+                          : 'border-slate-200 bg-white/60 hover:border-blue-300'
+                      }`}
+                      onClick={() => setGenerationMode('async')}
+                    >
+                      <div className="flex items-center space-x-3">
+                        <div className={`w-4 h-4 rounded-full border-2 ${
+                          generationMode === 'async' ? 'border-blue-500 bg-blue-500' : 'border-slate-300'
+                        }`}>
+                          {generationMode === 'async' && <div className="w-full h-full rounded-full bg-white scale-50"></div>}
+                        </div>
+                        <div className="flex-1">
+                          <div className="font-semibold text-slate-800">🎯 异步模式</div>
+                          <div className="text-sm text-slate-600">无时间限制，3张独立图片，实时进度</div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
               
               {/* 重新生成按钮 - 仅在结果显示时出现 */}
               {showResults && (

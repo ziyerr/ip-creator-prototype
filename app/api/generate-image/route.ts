@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 
-// 使用 Edge Runtime，避免传统 Serverless 函数10秒超时限制
+// 使用Edge Runtime，支持更长的执行时间（最多25秒）
 export const runtime = 'edge';
 
 export async function POST(req: NextRequest) {
@@ -21,7 +21,7 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    console.log('Edge Runtime 开始生成图片，提示词长度:', prompt.length);
+    console.log('开始生成图片，提示词长度:', prompt.length);
 
     // API配置
     const apiUrl = 'https://ismaque.org/v1/images/edits';
@@ -44,9 +44,9 @@ export async function POST(req: NextRequest) {
     apiFormData.append('response_format', 'url');
     apiFormData.append('model', 'gpt-image-1');
 
-    console.log('调用麻雀API生成图片 (Edge Runtime)...');
+    console.log('调用麻雀API生成图片...');
     
-    // Edge Runtime 支持更长超时时间：20秒
+    // Edge Runtime支持更长超时，设置20秒
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 20000);
     
@@ -69,7 +69,7 @@ export async function POST(req: NextRequest) {
       }
 
       const data = await response.json();
-      console.log('Edge Runtime API响应:', data);
+      console.log('API响应:', data);
 
       // 提取图片URL
       let imageUrl = '';
@@ -82,21 +82,20 @@ export async function POST(req: NextRequest) {
       }
 
       if (!imageUrl) {
-        console.error('API响应中未找到图片URL，完整响应:', data);
+        console.error('API响应中未找到图片URL:', data);
         throw new Error('API响应中未找到有效图片URL');
       }
 
-      console.log('Edge Runtime 图片生成成功，URL:', imageUrl.substring(0, 100) + '...');
+      console.log('图片生成成功，URL:', imageUrl.substring(0, 100) + '...');
 
       // 返回结果 - 兼容前端期望的数组格式
       return new Response(JSON.stringify({
         success: true,
         urls: [imageUrl, imageUrl, imageUrl], // 复制为3个方案
-        message: 'Edge Runtime 高质量图片生成成功',
+        message: 'Edge Runtime高质量图片生成成功',
         model: 'gpt-image-1',
         size: '1024x1024',
-        runtime: 'edge',
-        timeout: '20s'
+        runtime: 'edge'
       }), {
         status: 200,
         headers: { 'Content-Type': 'application/json' }
@@ -106,13 +105,12 @@ export async function POST(req: NextRequest) {
       clearTimeout(timeoutId);
       
       if (fetchError instanceof Error && fetchError.name === 'AbortError') {
-        console.log('Edge Runtime 请求超时 (20秒)，返回超时错误');
+        console.log('请求超时，返回超时错误');
         return new Response(JSON.stringify({
           error: '生成请求超时',
           code: 'TIMEOUT',
-          message: 'Edge Runtime 图片生成时间超过20秒限制，请重试或选择其他风格',
-          runtime: 'edge',
-          timeout: '20s'
+          message: '图片生成时间超过20秒限制，建议尝试异步模式或重试',
+          suggestion: '考虑使用异步生成模式获得更好的体验'
         }), {
           status: 408,
           headers: { 'Content-Type': 'application/json' }
@@ -123,7 +121,7 @@ export async function POST(req: NextRequest) {
     }
 
   } catch (error) {
-    console.error('Edge Runtime 图片生成失败:', error);
+    console.error('图片生成失败:', error);
     return new Response(JSON.stringify({ 
       error: '图片生成失败',
       details: error instanceof Error ? error.message : String(error),
