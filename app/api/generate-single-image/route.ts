@@ -11,6 +11,7 @@ export async function POST(req: NextRequest) {
     const requestFormData = await req.formData();
     const prompt = requestFormData.get('prompt') as string;
     const imageFile = requestFormData.get('image') as File;
+    const variationSeed = requestFormData.get('variationSeed') as string || '';
 
     if (!prompt || !imageFile) {
       return Response.json({ 
@@ -18,30 +19,44 @@ export async function POST(req: NextRequest) {
       }, { status: 400 });
     }
 
-    console.log('开始生成单张图片，提示词长度:', prompt.length);
+    console.log('开始生成单张图片，提示词长度:', prompt.length, '变化种子:', variationSeed);
 
     // API配置
     const apiUrl = 'https://ismaque.org/v1/images/edits';
     const apiKey = process.env.SPARROW_API_KEY || 'sk-1eEdZF3JuFocE3eyrFBnmE1IgMFwbGcwPfMciRMdxF1Zl8Ke';
     
-    // 处理提示词
+    // 处理提示词 - 添加变化因子确保每张图片独特
     let finalPrompt = prompt.replace('[REF_IMAGE]', 'the uploaded reference image');
-    finalPrompt += `. CRITICAL: Generate a character based on the uploaded reference image. Maintain the SAME SUBJECT TYPE (if it's an animal, generate an animal; if it's a person, generate a person). Preserve the key characteristics while applying the artistic style.`;
+    
+    // 🎨 为每张图片添加独特的变化指令
+    const variationPrompts = [
+      'with slight pose variation and unique background elements',
+      'with different lighting mood and alternative angle perspective', 
+      'with varied color saturation and distinct artistic interpretation'
+    ];
+    
+    const variationIndex = parseInt(variationSeed) || 0;
+    const selectedVariation = variationPrompts[variationIndex % variationPrompts.length];
+    
+    finalPrompt += `. CRITICAL: Generate a character based on the uploaded reference image. Maintain the SAME SUBJECT TYPE (if it's an animal, generate an animal; if it's a person, generate a person). Preserve the key characteristics while applying the artistic style ${selectedVariation}.`;
     
     // 准备图片数据 - 兼容Node.js Runtime
     const imageBuffer = Buffer.from(await imageFile.arrayBuffer());
     
-    // 🔧 优化策略：使用较小尺寸提高成功率和速度
+    // 🔧 真正独立生成策略：每次调用都有微妙差异
     const apiFormData = new FormData();
     apiFormData.append('image', new Blob([imageBuffer]), imageFile.name);
     apiFormData.append('mask', new Blob([imageBuffer]), imageFile.name);
     apiFormData.append('prompt', finalPrompt);
-    apiFormData.append('n', '1'); // 单张图片
+    apiFormData.append('n', '1'); // 单张图片，确保真正独立
     apiFormData.append('size', '512x512'); // 使用较小尺寸提高速度
     apiFormData.append('response_format', 'url');
     apiFormData.append('model', 'gpt-image-1');
+    
+    // 🎲 添加随机种子确保变化
+    apiFormData.append('user', `variation_${variationSeed}_${Date.now()}`);
 
-    console.log('调用麻雀API生成单张优化图片...');
+    console.log('调用麻雀API生成独特图片 - 变化:', selectedVariation);
     
     // 🚀 Node.js Runtime支持更长超时，设置45秒
     const controller = new AbortController();
@@ -83,16 +98,18 @@ export async function POST(req: NextRequest) {
         throw new Error('API响应中未找到有效图片URL');
       }
 
-      console.log('单张图片生成成功，URL:', imageUrl.substring(0, 100) + '...');
+      console.log(`✅ 独特图片生成成功 (变化${variationIndex + 1}):`, imageUrl.substring(0, 100) + '...');
 
-      // 返回单张图片结果
+      // 返回单张独特图片结果
       return Response.json({
         success: true,
         url: imageUrl,
-        message: 'Node.js Runtime单图片生成成功',
+        message: `真实独立图片生成成功 - 变化${variationIndex + 1}`,
         model: 'gpt-image-1',
         size: '512x512',
-        runtime: 'nodejs'
+        runtime: 'nodejs',
+        variation: selectedVariation,
+        variationIndex: variationIndex + 1
       });
 
     } catch (fetchError: unknown) {
@@ -112,9 +129,9 @@ export async function POST(req: NextRequest) {
     }
 
   } catch (error) {
-    console.error('单图片生成失败:', error);
+    console.error('独立图片生成失败:', error);
     return Response.json({ 
-      error: '单图片生成失败',
+      error: '独立图片生成失败',
       details: error instanceof Error ? error.message : String(error),
       runtime: 'nodejs'
     }, { status: 500 });

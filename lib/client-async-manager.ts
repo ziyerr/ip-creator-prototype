@@ -79,7 +79,7 @@ class ClientAsyncManager {
 
       this.updateTaskStatus(taskId, 'processing', 30, '🎨 AI正在并行生成3张专属IP形象...');
 
-      // 🚀 并行调用新的单图片生成API，每次生成1张
+      // 🚀 并行调用新的单图片生成API，每次生成1张独特图片
       const promises = [];
       for (let i = 0; i < 3; i++) {
         const generateSingleImageWithRetry = async (): Promise<string> => {
@@ -88,12 +88,16 @@ class ClientAsyncManager {
           
           for (let retry = 0; retry <= maxRetries; retry++) {
             try {
-              console.log(`🖼️ 生成第${i + 1}张图片 (尝试 ${retry + 1}/${maxRetries + 1})...`);
+              console.log(`🖼️ 生成第${i + 1}张独立图片 (尝试 ${retry + 1}/${maxRetries + 1})...`);
 
+              // 🎨 为每张图片添加独特的变化种子
+              const variationSeed = i.toString(); // 0, 1, 2 对应不同变化
+              
               // 准备FormData
               const formData = new FormData();
               formData.append('prompt', finalPrompt);
               formData.append('image', task.imageFile);
+              formData.append('variationSeed', variationSeed); // 关键：变化种子确保独特性
 
               // 调用新的单图片生成API端点（Node.js Runtime，45秒超时）
               const response = await fetch('/api/generate-single-image', {
@@ -120,7 +124,8 @@ class ClientAsyncManager {
               }
 
               const imageUrl = data.url;
-              console.log(`✅ 第${i + 1}张图片生成成功:`, imageUrl.substring(0, 100) + '...');
+              const variationInfo = data.variation || '独特变化';
+              console.log(`✅ 第${i + 1}张独立图片生成成功 (${variationInfo}):`, imageUrl.substring(0, 100) + '...');
               return imageUrl;
               
             } catch (error) {
@@ -141,37 +146,36 @@ class ClientAsyncManager {
         promises.push(generateSingleImageWithRetry());
       }
 
-      this.updateTaskStatus(taskId, 'processing', 60, '⏳ 等待所有图片生成完成...');
+      this.updateTaskStatus(taskId, 'processing', 60, '⏳ 等待所有3张独立图片生成完成...');
 
-      // 🔄 允许部分失败：至少成功生成1张图片就算成功
+      // 🎯 严格要求：必须生成3张真实独立图片，不接受复制
       const results = await Promise.allSettled(promises);
       
-      this.updateTaskStatus(taskId, 'processing', 90, '✨ 正在处理和验证生成结果...');
+      this.updateTaskStatus(taskId, 'processing', 90, '✨ 正在验证3张独立图片的生成结果...');
 
-      // 处理结果
+      // 处理结果 - 只接受真正成功的图片
       const successResults = results
         .filter((result): result is PromiseFulfilledResult<string> => result.status === 'fulfilled')
         .map(result => result.value);
       
       const failedCount = results.length - successResults.length;
       
-      if (successResults.length === 0) {
-        throw new Error('所有图片生成均失败，请检查网络连接或稍后重试');
+      // 🚨 严格验证：必须至少有2张成功，否则认为任务失败
+      if (successResults.length < 2) {
+        throw new Error(`生成失败：只成功生成了${successResults.length}张图片，至少需要2张。请检查网络连接或稍后重试`);
       }
 
-      // 如果只成功了部分图片，补充成3张（复制成功的图片）
-      while (successResults.length < 3) {
-        successResults.push(successResults[0]); // 复制第一张成功的图片
-      }
-
-      // 完成任务
-      const completionMessage = failedCount > 0 
-        ? `🎉 生成完成！成功${3 - failedCount}张，失败${failedCount}张` 
-        : '🎉 所有图片生成完成！';
-        
-      this.updateTaskStatus(taskId, 'completed', 100, completionMessage, successResults.slice(0, 3));
+      // 🚫 移除复制逻辑：如果不足3张，明确告知用户实际数量
+      const actualResults = successResults.slice(0, 3); // 最多3张
       
-      console.log(`🎊 前端任务 ${taskId} 完成，成功生成 ${3 - failedCount} 张图片，失败 ${failedCount} 张`);
+      // 完成任务 - 明确告知实际生成数量
+      const completionMessage = failedCount === 0 
+        ? `🎉 成功生成3张真实独立图片！` 
+        : `🎯 生成完成！成功${actualResults.length}张独立图片，失败${failedCount}张`;
+        
+      this.updateTaskStatus(taskId, 'completed', 100, completionMessage, actualResults);
+      
+      console.log(`🎊 前端任务 ${taskId} 完成，真实生成 ${actualResults.length} 张独立图片，失败 ${failedCount} 张`);
 
     } catch (error) {
       console.error(`❌ 前端任务 ${taskId} 处理失败:`, error);
