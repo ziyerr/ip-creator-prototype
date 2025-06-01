@@ -106,33 +106,61 @@ export default function HomePage() {
   const handleGenerate = useCallback(async () => {
     if (!uploadedImage || !selectedStyle) return
 
+    console.log('开始生成流程...');
+    setIsGenerating(true);
+    setGenerationProgress(0);
+    setGenerationStage("🔍 分析上传图片中...");
+    setShowResults(false);
+    setErrorMessage("");
+
     try {
-      // 同步生成图片
-      console.log('开始调用API生成图片...');
-      setGenerationProgress(20);
-      setGenerationStage("🔍 分析上传图片特征...");
+      // 更详细的进度反馈
+      setGenerationProgress(10);
+      setGenerationStage("📤 上传图片到AI服务器...");
       
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      setGenerationProgress(20);
+      setGenerationStage("🧠 AI正在理解图片内容...");
+      
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      setGenerationProgress(30);
+      setGenerationStage("🎨 开始并行生成3张不同风格图片...");
+      
+      // 模拟生成进度更新
+      const progressInterval = setInterval(() => {
+        setGenerationProgress(prev => {
+          if (prev < 90) {
+            const increment = Math.random() * 10 + 5; // 5-15的随机增量
+            return Math.min(90, prev + increment);
+          }
+          return prev;
+        });
+      }, 3000); // 每3秒更新一次进度
+
       const generatedImageUrls = await generateImageWithReference({
-        prompt: '生成专属IP形象', // 这个会被模板覆盖
+        prompt: '生成专属IP形象',
         imageFile: uploadedImage,
         style: selectedStyle as 'cute' | 'toy' | 'cyber',
         customRequirements: customInput || undefined,
       });
+
+      clearInterval(progressInterval);
       
       console.log(`生成完成，获得${generatedImageUrls.length}张图片:`, generatedImageUrls);
       
-      // 更新进度
-      setGenerationProgress(80);
-      setGenerationStage("🎨 准备展示生成结果...");
+      setGenerationProgress(95);
+      setGenerationStage("✨ 准备展示生成结果...");
       
-      // 构建结果数组 - 处理多张图片
+      // 构建结果数组
       let results: Array<{ id: string; url: string; style: string }> = [];
       
       if (generatedImageUrls && generatedImageUrls.length > 0) {
         results = generatedImageUrls.map((url, index) => ({
           id: `generated_${Date.now()}_${index}`,
           url: url,
-          style: getStyleLabel(selectedStyle)
+          style: `方案${String.fromCharCode(65 + index)} - ${getStyleLabel(selectedStyle)}`
         }));
       } else {
         // 如果没有返回图片，使用占位符
@@ -143,9 +171,8 @@ export default function HomePage() {
         ];
       }
       
-      // 最终进度
       setGenerationProgress(100);
-      setGenerationStage("✨ 生成完成！");
+      setGenerationStage("🎉 所有图片生成完成！");
       
       // 短暂延迟后显示结果
       setTimeout(() => {
@@ -154,7 +181,7 @@ export default function HomePage() {
         setGenerationProgress(0);
         setGenerationStage("");
         setShowResults(true);
-      }, 500);
+      }, 1000);
       
     } catch (error: any) {
       console.error('生成过程中出错:', error);
@@ -165,13 +192,26 @@ export default function HomePage() {
       let errorMessage = '未知错误';
       if (error instanceof Error) {
         if (error.message.includes('超时')) {
-          errorMessage = '图片生成超时，请重试或选择其他风格';
+          errorMessage = '图片生成时间较长，已启用50秒等待时间，请耐心等待或考虑使用异步模式';
+          setGenerationStage("⏱️ 生成超时");
+          setErrorMessage(errorMessage);
         } else {
           errorMessage = error.message;
         }
       }
       
-      alert(`生成失败: ${errorMessage}，请重试`);
+      // 显示错误但仍提供重试选项
+      setErrorMessage(errorMessage);
+      setTimeout(() => {
+        const fallbackResults = [
+          { id: "1", url: "/placeholder.svg?height=300&width=300", style: "方案A" },
+          { id: "2", url: "/placeholder.svg?height=300&width=300", style: "方案B" },
+          { id: "3", url: "/placeholder.svg?height=300&width=300", style: "方案C" },
+        ];
+        setGeneratedImages(fallbackResults);
+        setIsGenerating(false);
+        setShowResults(true);
+      }, 2000);
     }
   }, [uploadedImage, selectedStyle, customInput])
 
