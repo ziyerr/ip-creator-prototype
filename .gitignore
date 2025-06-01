@@ -42,3 +42,4 @@ temp/
 outputs/
 generated/
 *.output
+.vercel
