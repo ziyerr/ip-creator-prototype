@@ -29,7 +29,7 @@ export default function HomePage() {
   const [showResults, setShowResults] = useState(false)
   const [errorMessage, setErrorMessage] = useState("")
   const [imageLoadStates, setImageLoadStates] = useState<Record<string, 'loading' | 'loaded' | 'error'>>({})
-  const [generationMode, setGenerationMode] = useState<'auto' | 'sync' | 'async'>('async')
+  const [generationMode, setGenerationMode] = useState<'auto' | 'sync' | 'async'>('sync')
 
   const router = useRouter()
 
@@ -453,21 +453,21 @@ export default function HomePage() {
                   <div className="grid grid-cols-1 gap-3">
                     <div
                       className={`border-2 rounded-xl p-3 cursor-pointer transition-all ${
-                        generationMode === 'async' 
-                          ? 'border-green-500 bg-green-50 ring-2 ring-green-200' 
-                          : 'border-slate-200 bg-white/60 hover:border-green-300'
+                        generationMode === 'sync' 
+                          ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-200' 
+                          : 'border-slate-200 bg-white/60 hover:border-blue-300'
                       }`}
-                      onClick={() => setGenerationMode('async')}
+                      onClick={() => setGenerationMode('sync')}
                     >
                       <div className="flex items-center space-x-3">
                         <div className={`w-4 h-4 rounded-full border-2 ${
-                          generationMode === 'async' ? 'border-green-500 bg-green-500' : 'border-slate-300'
+                          generationMode === 'sync' ? 'border-blue-500 bg-blue-500' : 'border-slate-300'
                         }`}>
-                          {generationMode === 'async' && <div className="w-full h-full rounded-full bg-white scale-50"></div>}
+                          {generationMode === 'sync' && <div className="w-full h-full rounded-full bg-white scale-50"></div>}
                         </div>
                         <div className="flex-1">
-                          <div className="font-bold text-slate-800">🎯 异步模式 <span className="text-green-600 text-sm">（推荐）</span></div>
-                          <div className="text-sm text-slate-600">无时间限制，3张独立高质量图片，实时进度反馈</div>
+                          <div className="font-bold text-slate-800">⚡ Edge Runtime模式 <span className="text-blue-600 text-sm">（推荐）</span></div>
+                          <div className="text-sm text-slate-600">稳定可靠，20秒内完成，高质量1024x1024图片</div>
                         </div>
                       </div>
                     </div>
@@ -475,14 +475,14 @@ export default function HomePage() {
                     <div
                       className={`border-2 rounded-xl p-3 cursor-pointer transition-all ${
                         generationMode === 'auto' 
-                          ? 'border-blue-500 bg-blue-50' 
-                          : 'border-slate-200 bg-white/60 hover:border-blue-300'
+                          ? 'border-green-500 bg-green-50' 
+                          : 'border-slate-200 bg-white/60 hover:border-green-300'
                       }`}
                       onClick={() => setGenerationMode('auto')}
                     >
                       <div className="flex items-center space-x-3">
                         <div className={`w-4 h-4 rounded-full border-2 ${
-                          generationMode === 'auto' ? 'border-blue-500 bg-blue-500' : 'border-slate-300'
+                          generationMode === 'auto' ? 'border-green-500 bg-green-500' : 'border-slate-300'
                         }`}>
                           {generationMode === 'auto' && <div className="w-full h-full rounded-full bg-white scale-50"></div>}
                         </div>
@@ -494,22 +494,22 @@ export default function HomePage() {
                     </div>
                     
                     <div
-                      className={`border-2 rounded-xl p-3 cursor-pointer transition-all ${
-                        generationMode === 'sync' 
-                          ? 'border-orange-500 bg-orange-50' 
-                          : 'border-slate-200 bg-white/60 hover:border-orange-300'
+                      className={`border-2 rounded-xl p-3 cursor-pointer transition-all opacity-75 ${
+                        generationMode === 'async' 
+                          ? 'border-red-300 bg-red-50' 
+                          : 'border-slate-200 bg-white/60 hover:border-red-300'
                       }`}
-                      onClick={() => setGenerationMode('sync')}
+                      onClick={() => setGenerationMode('async')}
                     >
                       <div className="flex items-center space-x-3">
                         <div className={`w-4 h-4 rounded-full border-2 ${
-                          generationMode === 'sync' ? 'border-orange-500 bg-orange-500' : 'border-slate-300'
+                          generationMode === 'async' ? 'border-red-400 bg-red-400' : 'border-slate-300'
                         }`}>
-                          {generationMode === 'sync' && <div className="w-full h-full rounded-full bg-white scale-50"></div>}
+                          {generationMode === 'async' && <div className="w-full h-full rounded-full bg-white scale-50"></div>}
                         </div>
                         <div className="flex-1">
-                          <div className="font-semibold text-slate-800">⚡ 快速模式</div>
-                          <div className="text-sm text-slate-600">Edge Runtime，20秒内完成或超时</div>
+                          <div className="font-semibold text-slate-800">🎯 异步模式 <span className="text-red-500 text-xs">（实验性）</span></div>
+                          <div className="text-sm text-slate-600">可能遇到任务丢失问题，建议使用其他模式</div>
                         </div>
                       </div>
                     </div>
