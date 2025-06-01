@@ -69,24 +69,29 @@ export async function POST(req: NextRequest) {
     apiFormData.append('image', new Blob([imageBuffer]), imageFile.name);
     apiFormData.append('mask', new Blob([imageBuffer]), imageFile.name); // 使用相同图片作为mask
     apiFormData.append('prompt', finalPrompt);
-    apiFormData.append('n', '3'); // 生成3张图片
-    apiFormData.append('size', '1024x1024');
+    apiFormData.append('n', '1'); // 改为生成1张图片，减少处理时间
+    apiFormData.append('size', '512x512'); // 改为较小尺寸，减少生成时间
     apiFormData.append('response_format', 'url');
     apiFormData.append('model', 'gpt-image-1');
     
     console.log('调用麻雀API图片编辑接口...');
     console.log('请求参数: 图片文件大小:', imageFile.size, 'bytes');
     console.log('提示词:', finalPrompt);
-    console.log('生成数量: 3张图片');
+    console.log('生成数量: 1张图片（优化超时）');
+    console.log('图片尺寸: 512x512（优化超时）');
 
-    // 4. 添加重试机制处理网络错误
+    // 4. 添加重试机制处理网络错误，增加超时设置
     let apiRes: Response | undefined;
     let retryCount = 0;
-    const maxRetries = 3;
+    const maxRetries = 2; // 减少重试次数节省时间
     
     while (retryCount < maxRetries) {
       try {
         console.log(`API调用尝试 ${retryCount + 1}/${maxRetries}...`);
+        
+        // 使用AbortController实现超时控制
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 8000); // 8秒超时
         
         apiRes = await fetch(apiUrl, {
           method: 'POST',
@@ -94,8 +99,10 @@ export async function POST(req: NextRequest) {
             'Authorization': `Bearer ${apiKey}`,
           },
           body: apiFormData,
+          signal: controller.signal, // 添加超时控制
         });
         
+        clearTimeout(timeoutId); // 清除超时定时器
         console.log('API响应状态:', apiRes.status, apiRes.statusText);
         
         // 如果请求成功，跳出重试循环
@@ -109,21 +116,27 @@ export async function POST(req: NextRequest) {
         console.error(`API调用尝试 ${retryCount + 1} 失败:`, error);
         retryCount++;
         
+        // 特殊处理超时错误
+        if (error instanceof Error && error.name === 'AbortError') {
+          console.error('API调用超时，尝试优化参数...');
+        }
+        
         // 如果是最后一次尝试，抛出错误
         if (retryCount >= maxRetries) {
           return new Response(JSON.stringify({ 
-            error: '网络连接不稳定，请稍后重试',
+            error: 'API调用超时或网络不稳定',
             details: error instanceof Error ? error.message : String(error),
-            suggestion: 'API服务可能暂时不可用，建议稍后重试'
+            suggestion: 'API服务响应时间过长，建议稍后重试或联系客服',
+            isTimeout: error instanceof Error && error.name === 'AbortError'
           }), { 
-            status: 500,
+            status: 408, // 使用408 Request Timeout状态码
             headers: { 'Content-Type': 'application/json' }
           });
         }
         
-        // 等待后重试
-        console.log(`等待 ${(retryCount) * 2} 秒后重试...`);
-        await new Promise(resolve => setTimeout(resolve, retryCount * 2000));
+        // 等待后重试，减少等待时间
+        console.log(`等待 ${retryCount} 秒后重试...`);
+        await new Promise(resolve => setTimeout(resolve, retryCount * 1000));
       }
     }
 

@@ -128,9 +128,9 @@ export default function HomePage() {
       console.log('调用API生成3张方案图片...')
       
       try {
-        // 一次性生成3张图片
+        // 一次性生成1张图片（优化超时）
         const generatedImageUrls = await generateImageWithReference({
-          prompt: '生成3张不同变体的专属IP形象', // 这个会被模板覆盖
+          prompt: '生成专属IP形象', // 这个会被模板覆盖
           imageFile: uploadedImage,
           style: selectedStyle as 'cute' | 'toy' | 'cyber',
           customRequirements: customInput || undefined,
@@ -142,25 +142,28 @@ export default function HomePage() {
         setGenerationProgress(80)
         setGenerationStage("✨ 准备展示生成结果...")
         
-        // 构建结果数组
-        const results: Array<{ id: string; url: string; style: string }> = 
-          generatedImageUrls.map((url, index) => ({
-            id: (index + 1).toString(),
-            url: url,
-            style: `方案${String.fromCharCode(65 + index)}`
-          }))
+        // 构建结果数组 - 处理单张图片的情况
+        let results: Array<{ id: string; url: string; style: string }> = []
         
-        // 补充到3张（如果API返回少于3张）
-        while (results.length < 3) {
-          results.push({
-            id: (results.length + 1).toString(),
-            url: "/placeholder.svg?height=300&width=300",
-            style: `方案${String.fromCharCode(65 + results.length)}`
-          })
+        if (generatedImageUrls.length > 0) {
+          // 如果API返回了图片，使用第一张图片作为所有方案的基础
+          const baseImageUrl = generatedImageUrls[0]
+          results = [
+            { id: "1", url: baseImageUrl, style: "方案A" },
+            { id: "2", url: baseImageUrl, style: "方案B" },
+            { id: "3", url: baseImageUrl, style: "方案C" }
+          ]
+        } else {
+          // 如果没有返回图片，使用占位符
+          results = [
+            { id: "1", url: "/placeholder.svg?height=300&width=300", style: "方案A" },
+            { id: "2", url: "/placeholder.svg?height=300&width=300", style: "方案B" },
+            { id: "3", url: "/placeholder.svg?height=300&width=300", style: "方案C" }
+          ]
         }
         
         // 4. 完成生成
-        setGenerationStage("🎉 所有方案生成完成！")
+        setGenerationStage("🎉 IP形象生成完成！")
         setGenerationProgress(95)
         
         await new Promise(resolve => setTimeout(resolve, 500))
@@ -175,8 +178,15 @@ export default function HomePage() {
         
       } catch (error) {
         console.error('生成过程中出错:', error)
-        setGenerationStage("❌ 生成失败")
-        setErrorMessage(error instanceof Error ? error.message : "生成过程中出现未知错误，请重试")
+        
+        // 特殊处理超时错误
+        if (error instanceof Error && error.message.includes('timeout')) {
+          setGenerationStage("⏱️ 生成超时")
+          setErrorMessage("图片生成时间较长，服务器处理超时。请稍后重试，或联系客服获取帮助。")
+        } else {
+          setGenerationStage("❌ 生成失败")
+          setErrorMessage(error instanceof Error ? error.message : "生成过程中出现未知错误，请重试")
+        }
 
         // 显示错误提示，但仍然提供占位符结果
         setTimeout(() => {
