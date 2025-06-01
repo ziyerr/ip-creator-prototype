@@ -30,7 +30,24 @@ export async function POST(req: NextRequest) {
 
     // 2. 准备API请求数据 - 使用麻雀API图片生成接口
     const apiUrl = 'https://ismaque.org/v1/images/generations';
-    const apiKey = 'sk-1eEdZF3JuFocE3eyrFBnmE1IgMFwbGcwPfMciRMdxF1Zl8Ke';
+    
+    // 从环境变量获取API密钥，如果没有则使用默认值（用于向后兼容）
+    const apiKey = process.env.SPARROW_API_KEY || 'sk-1eEdZF3JuFocE3eyrFBnmE1IgMFwbGcwPfMciRMdxF1Zl8Ke';
+    
+    // 检查API密钥是否可用
+    if (!apiKey || apiKey === 'your_api_key_here') {
+      console.error('API密钥未配置或无效');
+      return new Response(JSON.stringify({ 
+        error: '服务配置错误：API密钥未设置',
+        suggestion: '请联系管理员配置SPARROW_API_KEY环境变量',
+        environment: process.env.NODE_ENV || 'unknown'
+      }), { 
+        status: 500,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+    
+    console.log('使用API密钥:', apiKey.substring(0, 10) + '...' + apiKey.substring(apiKey.length - 4));
     
     // 处理提示词，替换占位符并增强描述，特别强调特征保持
     let finalPrompt = prompt.replace('[REF_IMAGE]', 'the reference character maintaining all original characteristics');
