@@ -515,21 +515,33 @@ export default function HomePage() {
                                 showResults ? 'aspect-square' : 'h-32'
                               }`}
                               onError={(e) => {
-                                console.error('生成图片加载失败:', image.url);
+                                console.error('生成图片加载失败:', {
+                                  url: image.url,
+                                  isBase64: image.url.startsWith('data:'),
+                                  urlLength: image.url.length,
+                                  domain: image.url.startsWith('http') ? new URL(image.url).hostname : 'unknown'
+                                });
                                 setImageLoadStates(prev => ({ ...prev, [image.id]: 'error' }));
                                 // 尝试添加时间戳强制刷新
                                 const currentSrc = e.currentTarget.src;
                                 if (!currentSrc.includes('?t=')) {
+                                  console.log('尝试添加时间戳重新加载图片...');
                                   e.currentTarget.src = `${image.url}?t=${Date.now()}`;
                                 } else {
+                                  console.log('图片加载彻底失败，使用占位符');
                                   e.currentTarget.src = "/placeholder.svg?height=300&width=300";
                                 }
                               }}
                               onLoad={() => {
-                                console.log('生成图片加载成功:', image.url);
+                                console.log('生成图片加载成功:', {
+                                  url: image.url.substring(0, 100) + (image.url.length > 100 ? '...' : ''),
+                                  isBase64: image.url.startsWith('data:'),
+                                  urlLength: image.url.length
+                                });
                                 setImageLoadStates(prev => ({ ...prev, [image.id]: 'loaded' }));
                               }}
                               onLoadStart={() => {
+                                console.log('开始加载图片:', image.id);
                                 setImageLoadStates(prev => ({ ...prev, [image.id]: 'loading' }));
                               }}
                             />

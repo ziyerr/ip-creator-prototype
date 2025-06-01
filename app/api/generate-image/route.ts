@@ -244,13 +244,32 @@ export async function POST(req: NextRequest) {
 
     // 6. 返回图片URLs (生产环境优化)
     console.log('直接返回原始图片URLs（生产环境模式）:', imageUrls);
+    console.log('当前环境:', process.env.NODE_ENV);
+    console.log('是否为Vercel环境:', process.env.VERCEL ? 'Yes' : 'No');
+
+    // 添加额外的图片URL验证信息
+    const urlsWithValidation = imageUrls.map((url, index) => {
+      console.log(`图片${index + 1} URL详情:`, {
+        url,
+        length: url.length,
+        isBase64: url.startsWith('data:'),
+        domain: url.startsWith('http') ? new URL(url).hostname : 'unknown'
+      });
+      return url;
+    });
 
     return new Response(JSON.stringify({ 
-      urls: imageUrls,
-      count: imageUrls.length,
+      urls: urlsWithValidation,
+      count: urlsWithValidation.length,
       directUrl: true,
       source: 'sparrow-api',
-      message: `生产环境模式：直接使用API提供的${imageUrls.length}张图片URL`
+      environment: process.env.NODE_ENV || 'unknown',
+      isVercel: !!process.env.VERCEL,
+      message: `生产环境模式：直接使用API提供的${urlsWithValidation.length}张图片URL`,
+      debugInfo: {
+        apiResponseData: apiData,
+        extractedUrls: urlsWithValidation
+      }
     }), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },

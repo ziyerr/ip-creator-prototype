@@ -51,9 +51,23 @@ export async function generateImage(params: GenerateImageParams): Promise<string
 
   const data = await response.json()
   
+  console.log('API响应完整数据:', JSON.stringify(data, null, 2));
+  console.log('环境信息:', {
+    environment: data.environment,
+    isVercel: data.isVercel,
+    source: data.source
+  });
+  
   // 支持新的多图片返回格式
   if (data.urls && Array.isArray(data.urls)) {
     console.log(`成功返回${data.urls.length}张图片`)
+    data.urls.forEach((url: string, index: number) => {
+      console.log(`图片${index + 1}:`, {
+        url: url.substring(0, 100) + (url.length > 100 ? '...' : ''),
+        isBase64: url.startsWith('data:'),
+        length: url.length
+      });
+    });
     return data.urls
   }
   
