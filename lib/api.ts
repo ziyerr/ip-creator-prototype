@@ -20,7 +20,7 @@ export async function generateImageWithReference(
   params: GenerateImageParams
 ): Promise<string[]> {
   try {
-    console.log('调用同步图片生成API...');
+    console.log('调用Edge Runtime图片生成API...');
     
     // 构建完整提示词
     const stylePrompt = STYLE_PROMPTS[params.style];
@@ -31,14 +31,14 @@ export async function generateImageWithReference(
       fullPrompt += ` 额外要求: ${params.customRequirements.trim()}`;
     }
     
-    console.log('调用生成图片API，提示词:', fullPrompt.substring(0, 200) + '...');
+    console.log('调用Edge Runtime生成图片API，提示词:', fullPrompt.substring(0, 200) + '...');
     
     // 准备请求数据
     const formData = new FormData();
     formData.append('prompt', fullPrompt);
     formData.append('image', params.imageFile);
     
-    // 调用API
+    // 调用API - Edge Runtime支持更长处理时间
     const response = await fetch('/api/generate-image', {
       method: 'POST',
       body: formData,
@@ -46,23 +46,23 @@ export async function generateImageWithReference(
     
     if (!response.ok) {
       if (response.status === 408) {
-        throw new Error('图片生成超时，请重试或选择其他风格');
+        throw new Error('图片生成超时（Edge Runtime 20秒限制），请重试或选择其他风格');
       }
       throw new Error(`API调用失败: ${response.status}`);
     }
     
     const data = await response.json();
-    console.log('API响应:', data);
+    console.log('Edge Runtime API响应:', data);
     
     if (!data.success || !data.urls || !Array.isArray(data.urls)) {
       throw new Error('API响应格式错误：未找到图片URLs');
     }
     
-    console.log(`生成成功，获得${data.urls.length}张图片URL`);
+    console.log(`Edge Runtime生成成功，获得${data.urls.length}张图片URL`);
     return data.urls;
     
   } catch (error) {
-    console.error('图片生成API调用失败:', error);
+    console.error('Edge Runtime图片生成API调用失败:', error);
     throw error;
   }
 }
