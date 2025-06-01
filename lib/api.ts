@@ -162,3 +162,87 @@ export async function generateImageAsync(
     throw error;
   }
 }
+
+// 导入前端异步管理器
+import { clientAsyncManager, type ClientTask } from './client-async-manager';
+
+// 🚀 新增：浏览器本地缓存异步生成函数
+export async function generateImageWithClientAsync(params: {
+  prompt: string;
+  imageFile: File;
+  style: 'cute' | 'toy' | 'cyber';
+  customRequirements?: string;
+}, onProgress?: (progress: { status: string; progress: number; message: string }) => void): Promise<string[]> {
+  
+  console.log('🌐 启动前端异步模式，使用浏览器本地缓存...');
+  
+  // 构建完整提示词
+  let fullPrompt = params.prompt;
+  if (params.customRequirements) {
+    fullPrompt += ` 用户自定义需求: ${params.customRequirements}`;
+  }
+  
+  // 创建前端异步任务
+  const taskId = await clientAsyncManager.createTask(
+    fullPrompt, 
+    params.imageFile, 
+    params.style
+  );
+  
+  console.log(`📋 前端任务创建成功: ${taskId}`);
+  
+  // 轮询检查任务状态
+  return new Promise((resolve, reject) => {
+    const pollInterval = 2000; // 2秒轮询一次
+    const maxPollTime = 5 * 60 * 1000; // 最多轮询5分钟
+    const startTime = Date.now();
+    
+    const poll = () => {
+      const task = clientAsyncManager.getTaskStatus(taskId);
+      
+      if (!task) {
+        reject(new Error('任务不存在或已过期'));
+        return;
+      }
+      
+      // 更新进度回调
+      if (onProgress) {
+        const message = clientAsyncManager.getStatusMessage(task.status, task.progress);
+        onProgress({
+          status: task.status,
+          progress: task.progress,
+          message: message
+        });
+      }
+      
+      console.log(`🔍 轮询任务状态: ${task.status} ${task.progress}%`);
+      
+      // 检查任务状态
+      if (task.status === 'completed') {
+        console.log(`✅ 前端异步任务完成，获得 ${task.results.length} 张图片`);
+        resolve(task.results);
+        return;
+      }
+      
+      if (task.status === 'failed') {
+        const errorMsg = task.error || '未知错误';
+        console.error(`❌ 前端异步任务失败: ${errorMsg}`);
+        reject(new Error(`前端异步任务失败: ${errorMsg}`));
+        return;
+      }
+      
+      // 检查超时
+      if (Date.now() - startTime > maxPollTime) {
+        console.error('🕐 前端异步任务轮询超时');
+        reject(new Error('前端异步任务轮询超时，请刷新页面重试'));
+        return;
+      }
+      
+      // 继续轮询
+      setTimeout(poll, pollInterval);
+    };
+    
+    // 开始轮询
+    setTimeout(poll, 1000); // 1秒后开始第一次轮询
+  });
+}

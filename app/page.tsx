@@ -5,7 +5,7 @@ import type React from "react"
 import { useState, useCallback } from "react"
 import { useRouter } from "next/navigation"
 import { Sparkles, Menu, Upload, X, Zap, Palette, Cpu, ArrowRight } from "lucide-react"
-import { generateImageWithReference, generateImageAsync } from "@/lib/api"
+import { generateImageWithReference, generateImageAsync, generateImageWithClientAsync } from "@/lib/api"
 
 interface StyleOption {
   id: string
@@ -29,7 +29,7 @@ export default function HomePage() {
   const [showResults, setShowResults] = useState(false)
   const [errorMessage, setErrorMessage] = useState("")
   const [imageLoadStates, setImageLoadStates] = useState<Record<string, 'loading' | 'loaded' | 'error'>>({})
-  const [generationMode, setGenerationMode] = useState<'auto' | 'sync' | 'async'>('sync')
+  const [generationMode, setGenerationMode] = useState<'auto' | 'sync' | 'async' | 'client-async'>('client-async')
 
   const router = useRouter()
 
@@ -115,10 +115,27 @@ export default function HomePage() {
     try {
       let generatedImageUrls: string[] = [];
 
-      if (generationMode === 'async') {
-        // 直接使用异步模式
-        console.log('用户选择异步模式生成...');
-        setGenerationStage("🚀 启动异步任务模式...");
+      if (generationMode === 'client-async') {
+        // 🚀 新增：前端异步模式
+        console.log('用户选择前端异步模式生成（浏览器本地缓存）...');
+        setGenerationStage("🌐 启动前端异步模式，使用浏览器缓存...");
+        setGenerationProgress(10);
+
+        generatedImageUrls = await generateImageWithClientAsync({
+          prompt: '生成专属IP形象',
+          imageFile: uploadedImage,
+          style: selectedStyle as 'cute' | 'toy' | 'cyber',
+          customRequirements: customInput || undefined,
+        }, (status) => {
+          // 实时更新进度
+          setGenerationProgress(Math.max(10, status.progress));
+          setGenerationStage(status.message);
+        });
+
+      } else if (generationMode === 'async') {
+        // 服务器异步模式
+        console.log('用户选择服务器异步模式生成...');
+        setGenerationStage("🚀 启动服务器异步任务模式...");
         setGenerationProgress(10);
 
         generatedImageUrls = await generateImageAsync({
@@ -146,7 +163,7 @@ export default function HomePage() {
         });
 
       } else {
-        // 自动模式：先尝试同步，失败后回退到异步
+        // 自动模式：先尝试同步，失败后回退到前端异步
         console.log('自动模式：先尝试Edge Runtime同步生成...');
         setGenerationStage("⚡ 尝试快速生成（Edge Runtime）...");
         setGenerationProgress(20);
@@ -162,23 +179,23 @@ export default function HomePage() {
           console.log('Edge Runtime生成成功！');
 
         } catch (syncError: any) {
-          console.log('Edge Runtime生成失败，回退到异步模式:', syncError.message);
+          console.log('Edge Runtime生成失败，回退到前端异步模式:', syncError.message);
           
           if (syncError.message.includes('超时') || syncError.message.includes('timeout')) {
-            setGenerationStage("🔄 检测到超时，自动切换到异步模式...");
+            setGenerationStage("🔄 检测到超时，自动切换到前端异步模式...");
             setGenerationProgress(15);
             
             // 短暂延迟让用户看到切换提示
             await new Promise(resolve => setTimeout(resolve, 1000));
             
-            generatedImageUrls = await generateImageAsync({
+            generatedImageUrls = await generateImageWithClientAsync({
               prompt: '生成专属IP形象',
               imageFile: uploadedImage,
               style: selectedStyle as 'cute' | 'toy' | 'cyber',
               customRequirements: customInput || undefined,
             }, (status) => {
               setGenerationProgress(Math.max(15, status.progress));
-              setGenerationStage(`🔄 异步模式 - ${status.message}`);
+              setGenerationStage(`🔄 前端异步模式 - ${status.message}`);
             });
             
           } else {
@@ -233,9 +250,11 @@ export default function HomePage() {
       let errorMessage = '未知错误';
       if (error instanceof Error) {
         if (error.message.includes('超时')) {
-          errorMessage = '图片生成超时，建议选择异步模式重试';
+          errorMessage = '图片生成超时，建议选择前端异步模式重试';
+        } else if (error.message.includes('前端异步任务')) {
+          errorMessage = '前端异步任务处理失败，请检查网络连接后重试';
         } else if (error.message.includes('异步任务')) {
-          errorMessage = '异步任务处理失败，请检查网络连接后重试';
+          errorMessage = '服务器异步任务处理失败，请尝试前端异步模式';
         } else {
           errorMessage = error.message;
         }
@@ -453,6 +472,27 @@ export default function HomePage() {
                   <div className="grid grid-cols-1 gap-3">
                     <div
                       className={`border-2 rounded-xl p-3 cursor-pointer transition-all ${
+                        generationMode === 'client-async' 
+                          ? 'border-green-500 bg-green-50 ring-2 ring-green-200' 
+                          : 'border-slate-200 bg-white/60 hover:border-green-300'
+                      }`}
+                      onClick={() => setGenerationMode('client-async')}
+                    >
+                      <div className="flex items-center space-x-3">
+                        <div className={`w-4 h-4 rounded-full border-2 ${
+                          generationMode === 'client-async' ? 'border-green-500 bg-green-500' : 'border-slate-300'
+                        }`}>
+                          {generationMode === 'client-async' && <div className="w-full h-full rounded-full bg-white scale-50"></div>}
+                        </div>
+                        <div className="flex-1">
+                          <div className="font-bold text-slate-800">🌐 前端异步模式 <span className="text-green-600 text-sm">（强烈推荐）</span></div>
+                          <div className="text-sm text-slate-600">浏览器本地缓存，无时间限制，3张独立图片，100%稳定</div>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div
+                      className={`border-2 rounded-xl p-3 cursor-pointer transition-all ${
                         generationMode === 'sync' 
                           ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-200' 
                           : 'border-slate-200 bg-white/60 hover:border-blue-300'
@@ -466,8 +506,8 @@ export default function HomePage() {
                           {generationMode === 'sync' && <div className="w-full h-full rounded-full bg-white scale-50"></div>}
                         </div>
                         <div className="flex-1">
-                          <div className="font-bold text-slate-800">⚡ Edge Runtime模式 <span className="text-blue-600 text-sm">（推荐）</span></div>
-                          <div className="text-sm text-slate-600">稳定可靠，20秒内完成，高质量1024x1024图片</div>
+                          <div className="font-bold text-slate-800">⚡ Edge Runtime模式</div>
+                          <div className="text-sm text-slate-600">稳定快速，20秒内完成，高质量1024x1024图片</div>
                         </div>
                       </div>
                     </div>
@@ -475,20 +515,20 @@ export default function HomePage() {
                     <div
                       className={`border-2 rounded-xl p-3 cursor-pointer transition-all ${
                         generationMode === 'auto' 
-                          ? 'border-green-500 bg-green-50' 
-                          : 'border-slate-200 bg-white/60 hover:border-green-300'
+                          ? 'border-purple-500 bg-purple-50' 
+                          : 'border-slate-200 bg-white/60 hover:border-purple-300'
                       }`}
                       onClick={() => setGenerationMode('auto')}
                     >
                       <div className="flex items-center space-x-3">
                         <div className={`w-4 h-4 rounded-full border-2 ${
-                          generationMode === 'auto' ? 'border-green-500 bg-green-500' : 'border-slate-300'
+                          generationMode === 'auto' ? 'border-purple-500 bg-purple-500' : 'border-slate-300'
                         }`}>
                           {generationMode === 'auto' && <div className="w-full h-full rounded-full bg-white scale-50"></div>}
                         </div>
                         <div className="flex-1">
                           <div className="font-semibold text-slate-800">🤖 智能模式</div>
-                          <div className="text-sm text-slate-600">先尝试快速生成，超时自动切换异步模式</div>
+                          <div className="text-sm text-slate-600">先尝试快速生成，超时自动切换前端异步模式</div>
                         </div>
                       </div>
                     </div>
@@ -496,20 +536,20 @@ export default function HomePage() {
                     <div
                       className={`border-2 rounded-xl p-3 cursor-pointer transition-all opacity-75 ${
                         generationMode === 'async' 
-                          ? 'border-red-300 bg-red-50' 
-                          : 'border-slate-200 bg-white/60 hover:border-red-300'
+                          ? 'border-orange-300 bg-orange-50' 
+                          : 'border-slate-200 bg-white/60 hover:border-orange-300'
                       }`}
                       onClick={() => setGenerationMode('async')}
                     >
                       <div className="flex items-center space-x-3">
                         <div className={`w-4 h-4 rounded-full border-2 ${
-                          generationMode === 'async' ? 'border-red-400 bg-red-400' : 'border-slate-300'
+                          generationMode === 'async' ? 'border-orange-400 bg-orange-400' : 'border-slate-300'
                         }`}>
                           {generationMode === 'async' && <div className="w-full h-full rounded-full bg-white scale-50"></div>}
                         </div>
                         <div className="flex-1">
-                          <div className="font-semibold text-slate-800">🎯 异步模式 <span className="text-red-500 text-xs">（实验性）</span></div>
-                          <div className="text-sm text-slate-600">可能遇到任务丢失问题，建议使用其他模式</div>
+                          <div className="font-semibold text-slate-800">🏗️ 服务器异步模式 <span className="text-orange-500 text-xs">（需Vercel KV）</span></div>
+                          <div className="text-sm text-slate-600">服务器端任务队列，可能遇到任务丢失问题</div>
                         </div>
                       </div>
                     </div>
