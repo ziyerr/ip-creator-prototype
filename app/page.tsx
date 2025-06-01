@@ -62,6 +62,16 @@ export default function HomePage() {
     },
   ]
 
+  // 获取风格标签的辅助函数
+  const getStyleLabel = (style: string): string => {
+    switch (style) {
+      case 'cute': return 'Q版可爱风';
+      case 'toy': return '潮玩手办风';
+      case 'cyber': return '赛博朋克风';
+      default: return style;
+    }
+  };
+
   const handleImageUpload = useCallback((files: FileList | null) => {
     if (!files || files.length === 0) return
     const file = files[0]
@@ -96,108 +106,72 @@ export default function HomePage() {
   const handleGenerate = useCallback(async () => {
     if (!uploadedImage || !selectedStyle) return
 
-    console.log('开始生成流程...')
-    setIsGenerating(true)
-    setGenerationProgress(0)
-    setGenerationStage("🔍 分析上传图片中...")
-    setShowResults(false)
-    setErrorMessage("")
-
     try {
-      // 使用异步任务机制生成3张独立图片
+      // 同步生成图片
+      console.log('开始调用API生成图片...');
+      setGenerationProgress(20);
+      setGenerationStage("🔍 分析上传图片特征...");
+      
       const generatedImageUrls = await generateImageWithReference({
         prompt: '生成专属IP形象', // 这个会被模板覆盖
         imageFile: uploadedImage,
         style: selectedStyle as 'cute' | 'toy' | 'cyber',
         customRequirements: customInput || undefined,
-      }, (taskStatus) => {
-        // 实时更新进度和状态
-        console.log('任务进度更新:', taskStatus)
-        setGenerationProgress(Math.max(60, taskStatus.progress)) // 确保进度不倒退
-        setGenerationStage(taskStatus.message)
-      })
+      });
       
-      console.log(`异步任务完成，生成了${generatedImageUrls.length}张图片:`, generatedImageUrls)
+      console.log(`生成完成，获得${generatedImageUrls.length}张图片:`, generatedImageUrls);
       
       // 更新进度
-      setGenerationProgress(95)
-      setGenerationStage("✨ 准备展示生成结果...")
+      setGenerationProgress(80);
+      setGenerationStage("🎨 准备展示生成结果...");
       
       // 构建结果数组 - 处理多张图片
-      let results: Array<{ id: string; url: string; style: string }> = []
+      let results: Array<{ id: string; url: string; style: string }> = [];
       
-      if (generatedImageUrls.length > 0) {
-        // 使用生成的图片，每张图片对应一个方案
+      if (generatedImageUrls && generatedImageUrls.length > 0) {
         results = generatedImageUrls.map((url, index) => ({
-          id: (index + 1).toString(),
+          id: `generated_${Date.now()}_${index}`,
           url: url,
-          style: `方案${String.fromCharCode(65 + index)}`
-        }))
-        
-        // 如果少于3张，补充占位符
-        while (results.length < 3) {
-          results.push({
-            id: (results.length + 1).toString(),
-            url: "/placeholder.svg?height=300&width=300",
-            style: `方案${String.fromCharCode(65 + results.length)}`
-          })
-        }
-        
-        // 如果多于3张，只取前3张
-        results = results.slice(0, 3)
+          style: getStyleLabel(selectedStyle)
+        }));
       } else {
         // 如果没有返回图片，使用占位符
         results = [
           { id: "1", url: "/placeholder.svg?height=300&width=300", style: "方案A" },
           { id: "2", url: "/placeholder.svg?height=300&width=300", style: "方案B" },
           { id: "3", url: "/placeholder.svg?height=300&width=300", style: "方案C" }
-        ]
+        ];
       }
       
-      // 4. 完成生成
-      setGenerationStage("🎉 所有IP形象生成完成！")
-      setGenerationProgress(100)
+      // 最终进度
+      setGenerationProgress(100);
+      setGenerationStage("✨ 生成完成！");
       
-      await new Promise(resolve => setTimeout(resolve, 500))
-      setGenerationStage("✨ 展示您的专属IP形象...")
-
+      // 短暂延迟后显示结果
       setTimeout(() => {
-        setGeneratedImages(results)
-        setIsGenerating(false)
-        setShowResults(true)
-      }, 800)
+        setGeneratedImages(results);
+        setIsGenerating(false);
+        setGenerationProgress(0);
+        setGenerationStage("");
+        setShowResults(true);
+      }, 500);
       
-    } catch (error) {
-      console.error('生成过程中出错:', error)
+    } catch (error: any) {
+      console.error('生成过程中出错:', error);
+      setIsGenerating(false);
+      setGenerationProgress(0);
+      setGenerationStage("");
       
-      // 特殊处理不同类型的错误
+      let errorMessage = '未知错误';
       if (error instanceof Error) {
         if (error.message.includes('超时')) {
-          setGenerationStage("⏱️ 任务超时")
-          setErrorMessage("图片生成时间较长，任务可能仍在后台处理。请稍后重新尝试查看结果。")
-        } else if (error.message.includes('任务不存在')) {
-          setGenerationStage("❌ 任务丢失")
-          setErrorMessage("生成任务意外丢失，请重新开始生成。")
+          errorMessage = '图片生成超时，请重试或选择其他风格';
         } else {
-          setGenerationStage("❌ 生成失败")
-          setErrorMessage(error.message)
+          errorMessage = error.message;
         }
-      } else {
-        setGenerationStage("❌ 生成失败")
-        setErrorMessage("生成过程中出现未知错误，请重试")
       }
-
-      // 显示错误提示，但仍然提供占位符结果
-      setTimeout(() => {
-        const fallbackResults = [
-          { id: "1", url: "/placeholder.svg?height=300&width=300", style: "方案A" },
-          { id: "2", url: "/placeholder.svg?height=300&width=300", style: "方案B" },
-          { id: "3", url: "/placeholder.svg?height=300&width=300", style: "方案C" },
-        ]
-        setGeneratedImages(fallbackResults)
-        setIsGenerating(false)
-        setShowResults(true)
-      }, 1000)
+      
+      alert(`生成失败: ${errorMessage}，请重试`);
     }
   }, [uploadedImage, selectedStyle, customInput])
 
