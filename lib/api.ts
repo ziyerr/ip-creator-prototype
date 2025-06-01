@@ -16,7 +16,7 @@ interface GenerateImageParams {
   customRequirements?: string
 }
 
-export async function generateImage(params: GenerateImageParams): Promise<string> {
+export async function generateImage(params: GenerateImageParams): Promise<string[]> {
   // 构建完整的提示词
   let fullPrompt = params.prompt
   
@@ -50,7 +50,20 @@ export async function generateImage(params: GenerateImageParams): Promise<string
   }
 
   const data = await response.json()
-  return data.url
+  
+  // 支持新的多图片返回格式
+  if (data.urls && Array.isArray(data.urls)) {
+    console.log(`成功返回${data.urls.length}张图片`)
+    return data.urls
+  }
+  
+  // 向后兼容单图片格式
+  if (data.url) {
+    console.log('单图片格式，转换为数组')
+    return [data.url]
+  }
+  
+  throw new Error('API响应格式错误：未找到图片URLs')
 }
 
 export async function generateImageWithReference(params: {
@@ -58,7 +71,7 @@ export async function generateImageWithReference(params: {
   imageFile: File
   style?: keyof typeof STYLE_PROMPTS
   customRequirements?: string
-}): Promise<string> {
+}): Promise<string[]> {
   return generateImage({
     prompt: params.prompt,
     imageFile: params.imageFile,

@@ -672,66 +672,28 @@ https://ip-creator.vercel.app 自动更新
 # 生产环境图片生成问题修复
 
 ## 问题描述
-- ✅ 本地环境：图片生成正常，API调用成功
-- ❌ 生产环境：生成空白图片，可能的API调用失败
+用户反馈生产环境存在以下问题：
+1. **图片显示问题**：3个方案中有2个没有显示图片
+2. **内容不匹配**：上传狗狗图片，生成了人物角色
+3. **参考图片未生效**：AI没有基于上传的参考图片生成
+4. **数量问题**：应该生成3张图片，但显示不完整
 
-## 可能原因分析
-- [x] Vercel环境变量未配置或配置错误 ✅ 已解决
-- [x] 生产环境API密钥权限问题 ✅ 已解决
-- [ ] 网络访问限制或CORS问题
-- [x] 错误处理机制不完善，错误被隐藏 ✅ 已改进
+## 问题分析
+- [ ] 检查API是否正确接收和处理参考图片
+- [ ] 验证提示词是否正确描述参考图片要求
+- [ ] 检查前端是否正确调用3次API生成
+- [ ] 分析麻雀API的参考图片处理机制
+- [ ] 验证图片URL返回和显示逻辑
 
-## 修复步骤
-- [x] 检查Vercel环境变量配置
-- [x] 分析生产环境API日志
-- [x] 改进错误处理和日志记录
-- [x] 测试API密钥有效性
-- [ ] 验证修复结果
-
-## 修复总结
-🎉 **主要问题已修复！**
-
-### 🔍 **问题根因**：
-- **硬编码API密钥**: 代码中使用了硬编码的API密钥，在某些生产环境中可能失效
-- **环境变量缺失**: 虽然Vercel中已配置SPARROW_API_KEY，但代码未使用环境变量
-
-### 🛠️ **修复措施**：
-1. **代码重构**: 将硬编码API密钥改为环境变量 `process.env.SPARROW_API_KEY`
-2. **向后兼容**: 保留默认值作为fallback，确保平滑过渡
-3. **错误检查**: 添加API密钥有效性检查和详细错误信息
-4. **日志增强**: 添加API密钥使用情况的安全日志（只显示前后几位）
-5. **环境识别**: 在错误信息中显示当前环境（development/production）
-
-### 📊 **部署状态**：
-- **最新部署**: https://ip-creator-qjofblo7c-ziyerrs-projects.vercel.app
-- **部署状态**: ● Ready (已完成)
-- **构建时长**: 1分钟
-- **环境变量**: ✅ SPARROW_API_KEY 已配置在所有环境
-
-### 🔧 **技术改进**：
-```typescript
-// 修复前：硬编码
-const apiKey = 'sk-1eEdZF3JuFocE3eyrFBnmE1IgMFwbGcwPfMciRMdxF1Zl8Ke';
-
-// 修复后：环境变量 + 错误检查
-const apiKey = process.env.SPARROW_API_KEY || 'sk-1eEdZF3JuFocE3eyrFBnmE1IgMFwbGcwPfMciRMdxF1Zl8Ke';
-if (!apiKey || apiKey === 'your_api_key_here') {
-  return new Response(JSON.stringify({ 
-    error: '服务配置错误：API密钥未设置',
-    suggestion: '请联系管理员配置SPARROW_API_KEY环境变量',
-    environment: process.env.NODE_ENV || 'unknown'
-  }), { status: 500 });
-}
-```
+## 修复方案
+- [ ] 修复API参考图片处理逻辑
+- [ ] 优化提示词，强调基于参考图片生成
+- [ ] 确保3张图片都能正常生成和显示
+- [ ] 测试动物图片的识别和生成效果
+- [ ] 验证生产环境修复结果
 
 ## 开始时间
 2024年执行中...
-
-## 完成时间
-2024年完成 ✅
-
----
-**下一步**: 测试生产环境图片生成功能是否正常工作 
 
 # 前端图片显示问题修复
 

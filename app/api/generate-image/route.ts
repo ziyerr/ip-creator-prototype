@@ -2,12 +2,12 @@ import { NextRequest } from 'next/server';
 
 export async function POST(req: NextRequest) {
   try {
-    console.log('=== 开始处理图片生成请求（麻雀API图片生成） ===');
+    console.log('=== 开始处理图片生成请求（麻雀API图片编辑） ===');
     
     // 1. 解析 multipart/form-data
-    const formData = await req.formData();
-    const prompt = formData.get('prompt') as string;
-    const imageFile = formData.get('image') as File;
+    const requestFormData = await req.formData();
+    const prompt = requestFormData.get('prompt') as string;
+    const imageFile = requestFormData.get('image') as File;
 
     console.log('提示词:', prompt);
     console.log('参考图片:', imageFile?.name, '大小:', imageFile?.size);
@@ -26,8 +26,8 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // 2. 准备API请求数据 - 使用麻雀API图片生成接口
-    const apiUrl = 'https://ismaque.org/v1/images/generations';
+    // 2. 准备API请求数据 - 使用麻雀API图片编辑接口（支持参考图片）
+    const apiUrl = 'https://ismaque.org/v1/images/edits';
     
     // 从环境变量获取API密钥，如果没有则使用默认值（用于向后兼容）
     const apiKey = process.env.SPARROW_API_KEY || 'sk-1eEdZF3JuFocE3eyrFBnmE1IgMFwbGcwPfMciRMdxF1Zl8Ke';
@@ -47,32 +47,39 @@ export async function POST(req: NextRequest) {
     
     console.log('使用API密钥:', apiKey.substring(0, 10) + '...' + apiKey.substring(apiKey.length - 4));
     
-    // 处理提示词，替换占位符并增强描述，特别强调特征保持
-    let finalPrompt = prompt.replace('[REF_IMAGE]', 'the reference character maintaining all original characteristics');
+    // 处理提示词，替换占位符并增强描述，特别强调基于参考图片生成
+    let finalPrompt = prompt.replace('[REF_IMAGE]', 'the uploaded reference image');
     
-    // 为了更好的效果，增强提示词描述，特别强调特征精确保持
+    // 为了更好的效果，增强提示词描述，强调基于参考图片生成相同主体
     if (imageFile) {
-      finalPrompt += `. CRITICAL ENHANCEMENT: Study the reference image carefully and preserve ALL original characteristics including exact gender, facial structure, expression, and overall temperament. Generate a faithful IP character adaptation that maintains the person's authentic identity while applying the specified artistic style. High quality, detailed artwork, professional character design.`;
+      finalPrompt += `. CRITICAL: Generate a character based on the uploaded reference image. Maintain the SAME SUBJECT TYPE (if it's an animal, generate an animal; if it's a person, generate a person). Preserve the key characteristics while applying the artistic style. The generated image must feature the same type of subject as shown in the reference image.`;
     }
     
     console.log('最终提示词:', finalPrompt);
-    console.log('发送API请求到麻雀API图片生成接口...');
+    console.log('发送API请求到麻雀API图片编辑接口...');
 
-    // 3. 使用JSON格式调用generations接口
-    console.log('使用generations接口生成图片');
+    // 3. 使用multipart/form-data调用edits接口（支持参考图片）
+    console.log('使用edits接口生成基于参考图片的图片');
     
-    const requestBody = {
-      prompt: finalPrompt,
-      n: 1,
-      size: "1024x1024",
-      response_format: "url",
-      model: "gpt-image-1"
-    };
+    // 将图片文件转换为buffer
+    const imageBuffer = Buffer.from(await imageFile.arrayBuffer());
     
-    console.log('调用麻雀API图片生成接口...');
-    console.log('请求体:', JSON.stringify(requestBody, null, 2));
+    // 创建FormData
+    const apiFormData = new FormData();
+    apiFormData.append('image', new Blob([imageBuffer]), imageFile.name);
+    apiFormData.append('mask', new Blob([imageBuffer]), imageFile.name); // 使用相同图片作为mask
+    apiFormData.append('prompt', finalPrompt);
+    apiFormData.append('n', '3'); // 生成3张图片
+    apiFormData.append('size', '1024x1024');
+    apiFormData.append('response_format', 'url');
+    apiFormData.append('model', 'gpt-image-1');
     
-    // 添加重试机制处理网络错误
+    console.log('调用麻雀API图片编辑接口...');
+    console.log('请求参数: 图片文件大小:', imageFile.size, 'bytes');
+    console.log('提示词:', finalPrompt);
+    console.log('生成数量: 3张图片');
+
+    // 4. 添加重试机制处理网络错误
     let apiRes: Response | undefined;
     let retryCount = 0;
     const maxRetries = 3;
@@ -85,9 +92,8 @@ export async function POST(req: NextRequest) {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${apiKey}`,
-            'Content-Type': 'application/json',
           },
-          body: JSON.stringify(requestBody),
+          body: apiFormData,
         });
         
         console.log('API响应状态:', apiRes.status, apiRes.statusText);
@@ -163,78 +169,39 @@ export async function POST(req: NextRequest) {
     const apiData = await apiRes.json();
     console.log('API响应数据:', JSON.stringify(apiData, null, 2));
 
-    // 4. 处理API响应 - 根据官方文档检查响应格式
-    let imageUrl = null;
+    // 4. 处理API响应 - 支持多张图片
+    let imageUrls: string[] = [];
     
     // 检查标准OpenAI格式的data数组
     if (apiData.data && Array.isArray(apiData.data) && apiData.data.length > 0) {
-      const firstResult = apiData.data[0];
-      
-      if (firstResult?.url) {
-        imageUrl = firstResult.url;
-        console.log('找到图片URL (data数组格式):', imageUrl);
-      } else if (firstResult?.b64_json) {
-        // 如果返回base64格式，转换为data URL直接返回
-        console.log('检测到base64格式图片，转换为data URL');
-        const base64Data = firstResult.b64_json;
-        
-        // 构建data URL
-        const dataUrl = `data:image/png;base64,${base64Data}`;
-        console.log('base64图片转换为data URL成功');
-        
-        return new Response(JSON.stringify({ 
-          url: dataUrl,
-          directUrl: true,
-          format: 'base64',
-          source: 'sparrow-api',
-          message: 'base64格式图片已转换为data URL'
-        }), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        });
-      } else if (firstResult?.revised_prompt && !firstResult?.url && !firstResult?.b64_json) {
-        // API只返回了优化的提示词，没有生成图片
-        console.log('API只返回了优化提示词，未生成图片');
-        console.log('优化后的提示词:', firstResult.revised_prompt);
-        
-        return new Response(JSON.stringify({ 
-          error: '该API接口似乎是文本优化服务，没有生成图片。请检查API接口是否正确',
-          revised_prompt: firstResult.revised_prompt,
-          suggestion: '可能需要使用不同的API端点或参数来生成图片',
-          apiResponse: apiData
-        }), { 
-          status: 500,
-          headers: { 'Content-Type': 'application/json' }
-        });
+      for (const result of apiData.data) {
+        if (result?.url) {
+          imageUrls.push(result.url);
+          console.log('找到图片URL (data数组格式):', result.url);
+        } else if (result?.b64_json) {
+          // 如果返回base64格式，转换为data URL
+          const base64Data = result.b64_json;
+          const dataUrl = `data:image/png;base64,${base64Data}`;
+          imageUrls.push(dataUrl);
+          console.log('base64图片转换为data URL成功');
+        }
       }
     }
-    // 检查其他可能的字段
+    // 检查其他可能的字段格式
     else if (apiData.url) {
-      imageUrl = apiData.url;
-      console.log('找到图片URL (url字段):', imageUrl);
+      imageUrls.push(apiData.url);
+      console.log('找到图片URL (url字段):', apiData.url);
     }
     else if (apiData.image_url) {
-      imageUrl = apiData.image_url;
-      console.log('找到图片URL (image_url字段):', imageUrl);
+      imageUrls.push(apiData.image_url);
+      console.log('找到图片URL (image_url字段):', apiData.image_url);
     }
     else if (apiData.result) {
-      imageUrl = apiData.result;
-      console.log('找到图片URL (result字段):', imageUrl);
-    }
-    // 检查是否是异步任务
-    else if (apiData.id || apiData.task_id) {
-      console.log('检测到异步任务ID:', apiData.id || apiData.task_id);
-      return new Response(JSON.stringify({ 
-        error: '检测到异步任务，当前版本暂不支持轮询获取结果',
-        taskId: apiData.id || apiData.task_id,
-        message: '该API使用异步模式，需要轮询任务状态获取最终结果'
-      }), { 
-        status: 500,
-        headers: { 'Content-Type': 'application/json' }
-      });
+      imageUrls.push(apiData.result);
+      console.log('找到图片URL (result字段):', apiData.result);
     }
 
-    if (!imageUrl) {
+    if (imageUrls.length === 0) {
       console.error('未找到图片URL，完整响应:', JSON.stringify(apiData, null, 2));
       
       // 特殊处理：如果只返回revised_prompt，说明这可能是文本处理而非图片生成
@@ -260,27 +227,30 @@ export async function POST(req: NextRequest) {
     }
 
     // 5. 验证图片URL的可访问性
-    console.log('验证图片URL可访问性:', imageUrl);
+    console.log(`验证 ${imageUrls.length} 张图片URL的可访问性...`);
     
-    try {
-      const imgCheckRes = await fetch(imageUrl, { method: 'HEAD' });
-      if (!imgCheckRes.ok) {
-        console.warn('图片URL可能无法访问:', imgCheckRes.status, imgCheckRes.statusText);
-      } else {
-        console.log('图片URL验证成功，Content-Type:', imgCheckRes.headers.get('content-type'));
+    for (let i = 0; i < imageUrls.length; i++) {
+      try {
+        const imgCheckRes = await fetch(imageUrls[i], { method: 'HEAD' });
+        if (!imgCheckRes.ok) {
+          console.warn(`图片${i+1} URL可能无法访问:`, imgCheckRes.status, imgCheckRes.statusText);
+        } else {
+          console.log(`图片${i+1} URL验证成功，Content-Type:`, imgCheckRes.headers.get('content-type'));
+        }
+      } catch (error) {
+        console.warn(`图片${i+1} URL验证失败，但继续返回URL:`, error);
       }
-    } catch (error) {
-      console.warn('图片URL验证失败，但继续返回URL:', error);
     }
 
-    // 6. 直接返回原始图片URL (生产环境优化)
-    console.log('直接返回原始图片URL（生产环境模式）:', imageUrl);
+    // 6. 返回图片URLs (生产环境优化)
+    console.log('直接返回原始图片URLs（生产环境模式）:', imageUrls);
 
     return new Response(JSON.stringify({ 
-      url: imageUrl,
+      urls: imageUrls,
+      count: imageUrls.length,
       directUrl: true,
       source: 'sparrow-api',
-      message: '生产环境模式：直接使用API提供的图片URL'
+      message: `生产环境模式：直接使用API提供的${imageUrls.length}张图片URL`
     }), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },

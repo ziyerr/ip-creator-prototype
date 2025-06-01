@@ -122,82 +122,79 @@ export default function HomePage() {
       setGenerationProgress(45)
 
       // 3. 调用AI生成图片
-      setGenerationStage("🤖 AI正在生成您的专属IP形象...")
+      setGenerationStage("🤖 AI正在生成您的专属IP形象（3张方案）...")
       setGenerationProgress(60)
 
-      const results: Array<{ id: string; url: string; style: string }> = []
-
-      // 生成3个不同的方案
-      console.log('开始生成3个方案...')
-      for (let i = 0; i < 3; i++) {
-        const variantSuffix = i === 0 ? '经典版本' : i === 1 ? '创意变化' : '个性定制'
-        console.log(`生成方案${i + 1}，风格: ${selectedStyle}，变体: ${variantSuffix}`)
-
-        // 更新进度提示
-        setGenerationStage(`✨ 正在生成方案${String.fromCharCode(65 + i)}（${variantSuffix}）...`)
-        setGenerationProgress(60 + i * 8)
-
-        try {
-          const generatedImageUrl = await generateImageWithReference({
-            prompt: `方案${String.fromCharCode(65 + i)}，${variantSuffix}`, // 这个会被模板覆盖
-            imageFile: uploadedImage,
-            style: selectedStyle as 'cute' | 'toy' | 'cyber',
-            customRequirements: customInput || undefined,
-          })
-          console.log(`方案${i + 1}生成成功:`, generatedImageUrl)
-
+      console.log('调用API生成3张方案图片...')
+      
+      try {
+        // 一次性生成3张图片
+        const generatedImageUrls = await generateImageWithReference({
+          prompt: '生成3张不同变体的专属IP形象', // 这个会被模板覆盖
+          imageFile: uploadedImage,
+          style: selectedStyle as 'cute' | 'toy' | 'cyber',
+          customRequirements: customInput || undefined,
+        })
+        
+        console.log(`成功生成${generatedImageUrls.length}张图片:`, generatedImageUrls)
+        
+        // 更新进度
+        setGenerationProgress(80)
+        setGenerationStage("✨ 准备展示生成结果...")
+        
+        // 构建结果数组
+        const results: Array<{ id: string; url: string; style: string }> = 
+          generatedImageUrls.map((url, index) => ({
+            id: (index + 1).toString(),
+            url: url,
+            style: `方案${String.fromCharCode(65 + index)}`
+          }))
+        
+        // 补充到3张（如果API返回少于3张）
+        while (results.length < 3) {
           results.push({
-            id: (i + 1).toString(),
-            url: generatedImageUrl,
-            style: `方案${String.fromCharCode(65 + i)}`
-          })
-          
-          // 每生成一个方案后更新进度
-          setGenerationProgress(60 + (i + 1) * 10)
-          setGenerationStage(`✅ 方案${String.fromCharCode(65 + i)}生成完成！`)
-          await new Promise(resolve => setTimeout(resolve, 300))
-          
-        } catch (error) {
-          console.error(`生成方案${i + 1}时出错:`, error)
-          // 即使出错也添加占位符，保证用户体验
-          results.push({
-            id: (i + 1).toString(),
+            id: (results.length + 1).toString(),
             url: "/placeholder.svg?height=300&width=300",
-            style: `方案${String.fromCharCode(65 + i)}`
+            style: `方案${String.fromCharCode(65 + results.length)}`
           })
         }
+        
+        // 4. 完成生成
+        setGenerationStage("🎉 所有方案生成完成！")
+        setGenerationProgress(95)
+        
+        await new Promise(resolve => setTimeout(resolve, 500))
+        setGenerationProgress(100)
+        setGenerationStage("✨ 展示您的专属IP形象...")
+
+        setTimeout(() => {
+          setGeneratedImages(results)
+          setIsGenerating(false)
+          setShowResults(true)
+        }, 800)
+        
+      } catch (error) {
+        console.error('生成过程中出错:', error)
+        setGenerationStage("❌ 生成失败")
+        setErrorMessage(error instanceof Error ? error.message : "生成过程中出现未知错误，请重试")
+
+        // 显示错误提示，但仍然提供占位符结果
+        setTimeout(() => {
+          const fallbackResults = [
+            { id: "1", url: "/placeholder.svg?height=300&width=300", style: "方案A" },
+            { id: "2", url: "/placeholder.svg?height=300&width=300", style: "方案B" },
+            { id: "3", url: "/placeholder.svg?height=300&width=300", style: "方案C" },
+          ]
+          setGeneratedImages(fallbackResults)
+          setIsGenerating(false)
+          setShowResults(true)
+        }, 1000)
       }
 
-      // 4. 完成生成
-      setGenerationStage("🎉 所有方案生成完成！")
-      setGenerationProgress(95)
-      
-      await new Promise(resolve => setTimeout(resolve, 500))
-      setGenerationProgress(100)
-      setGenerationStage("✨ 展示您的专属IP形象...")
-
-      setTimeout(() => {
-        setGeneratedImages(results)
-        setIsGenerating(false)
-        setShowResults(true)
-      }, 800)
-
-    } catch (error) {
-      console.error('生成过程中出错:', error)
-      setGenerationStage("❌ 生成失败")
-      setErrorMessage(error instanceof Error ? error.message : "生成过程中出现未知错误，请重试")
-
-      // 显示错误提示，但仍然提供占位符结果
-      setTimeout(() => {
-        const fallbackResults = [
-          { id: "1", url: "/placeholder.svg?height=300&width=300", style: "方案A" },
-          { id: "2", url: "/placeholder.svg?height=300&width=300", style: "方案B" },
-          { id: "3", url: "/placeholder.svg?height=300&width=300", style: "方案C" },
-        ]
-        setGeneratedImages(fallbackResults)
-        setIsGenerating(false)
-        setShowResults(true)
-      }, 1000)
+    } catch (outerError) {
+      console.error('外层处理错误:', outerError)
+      setIsGenerating(false)
+      setErrorMessage('系统错误，请重试')
     }
   }, [uploadedImage, selectedStyle, customInput])
 
