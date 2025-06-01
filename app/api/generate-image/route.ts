@@ -1,6 +1,4 @@
 import { NextRequest } from 'next/server';
-import fs from 'fs';
-import path from 'path';
 
 export async function POST(req: NextRequest) {
   try {
@@ -176,30 +174,20 @@ export async function POST(req: NextRequest) {
         imageUrl = firstResult.url;
         console.log('找到图片URL (data数组格式):', imageUrl);
       } else if (firstResult?.b64_json) {
-        // 如果返回base64格式
-        console.log('检测到base64格式图片');
+        // 如果返回base64格式，转换为data URL直接返回
+        console.log('检测到base64格式图片，转换为data URL');
         const base64Data = firstResult.b64_json;
         
-        // 保存base64图片
-        const outputDir = path.join(process.cwd(), 'public/outputs');
-        if (!fs.existsSync(outputDir)) {
-          fs.mkdirSync(outputDir, { recursive: true });
-        }
-        
-        const filename = `output_${Date.now()}.png`;
-        const filePath = path.join(outputDir, filename);
-        
-        // 将base64转换为buffer并保存
-        const imgBuffer = Buffer.from(base64Data, 'base64');
-        fs.writeFileSync(filePath, imgBuffer);
-        
-        const publicUrl = `/outputs/${filename}`;
-        console.log('base64图片保存成功:', filePath);
+        // 构建data URL
+        const dataUrl = `data:image/png;base64,${base64Data}`;
+        console.log('base64图片转换为data URL成功');
         
         return new Response(JSON.stringify({ 
-          url: publicUrl,
-          filename,
-          format: 'base64'
+          url: dataUrl,
+          directUrl: true,
+          format: 'base64',
+          source: 'sparrow-api',
+          message: 'base64格式图片已转换为data URL'
         }), {
           status: 200,
           headers: { 'Content-Type': 'application/json' },
@@ -271,43 +259,28 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // 5. 确保输出目录存在
-    const outputDir = path.join(process.cwd(), 'public/outputs');
-    if (!fs.existsSync(outputDir)) {
-      console.log('创建outputs目录...');
-      fs.mkdirSync(outputDir, { recursive: true });
+    // 5. 验证图片URL的可访问性
+    console.log('验证图片URL可访问性:', imageUrl);
+    
+    try {
+      const imgCheckRes = await fetch(imageUrl, { method: 'HEAD' });
+      if (!imgCheckRes.ok) {
+        console.warn('图片URL可能无法访问:', imgCheckRes.status, imgCheckRes.statusText);
+      } else {
+        console.log('图片URL验证成功，Content-Type:', imgCheckRes.headers.get('content-type'));
+      }
+    } catch (error) {
+      console.warn('图片URL验证失败，但继续返回URL:', error);
     }
 
-    // 6. 下载生成图片到 public/outputs
-    const filename = `output_${Date.now()}.png`;
-    const filePath = path.join(outputDir, filename);
-    
-    console.log('开始下载生成的图片...');
-    const imgRes = await fetch(imageUrl);
-    
-    if (!imgRes.ok) {
-      console.error('下载图片失败:', imgRes.status, imgRes.statusText);
-      return new Response(JSON.stringify({ 
-        error: `下载生成图片失败: ${imgRes.status}`,
-        imageUrl: imageUrl
-      }), { 
-        status: 500,
-        headers: { 'Content-Type': 'application/json' }
-      });
-    }
+    // 6. 直接返回原始图片URL (生产环境优化)
+    console.log('直接返回原始图片URL（生产环境模式）:', imageUrl);
 
-    const imgBuffer = Buffer.from(await imgRes.arrayBuffer());
-    fs.writeFileSync(filePath, imgBuffer);
-    
-    const publicUrl = `/outputs/${filename}`;
-    console.log('图片保存成功:', filePath);
-    console.log('返回URL:', publicUrl);
-
-    // 7. 返回本地图片URL
     return new Response(JSON.stringify({ 
-      url: publicUrl,
-      originalUrl: imageUrl,
-      filename
+      url: imageUrl,
+      directUrl: true,
+      source: 'sparrow-api',
+      message: '生产环境模式：直接使用API提供的图片URL'
     }), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
