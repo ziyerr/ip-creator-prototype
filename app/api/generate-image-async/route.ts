@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server';
 
+// 异步图片生成API - 使用标准Web API确保边缘兼容性
 // 模拟KV存储的内存Map（生产环境建议使用Vercel KV或Redis）
 const taskStorage = new Map<string, {
   status: 'pending' | 'processing' | 'completed' | 'failed';
@@ -143,16 +144,16 @@ async function processImageGenerationTask(taskId: string, prompt: string, imageF
     
     task.progress = 40;
 
-    // 准备图片数据
-    const imageBuffer = Buffer.from(await imageFile.arrayBuffer());
+    // 准备图片数据 - 使用标准Web API替代Buffer
+    const imageArrayBuffer = await imageFile.arrayBuffer();
     
     // 生成3张图片（异步模式可以支持更长时间）
     const promises = [];
     for (let i = 0; i < 3; i++) {
       const generateSingleImage = async () => {
         const apiFormData = new FormData();
-        apiFormData.append('image', new Blob([imageBuffer]), imageFile.name);
-        apiFormData.append('mask', new Blob([imageBuffer]), imageFile.name);
+        apiFormData.append('image', new Blob([imageArrayBuffer]), imageFile.name);
+        apiFormData.append('mask', new Blob([imageArrayBuffer]), imageFile.name);
         apiFormData.append('prompt', finalPrompt);
         apiFormData.append('n', '1');
         apiFormData.append('size', '1024x1024');
@@ -170,10 +171,13 @@ async function processImageGenerationTask(taskId: string, prompt: string, imageF
         });
 
         if (!response.ok) {
-          throw new Error(`第${i + 1}张图片API调用失败: ${response.status}`);
+          const errorText = await response.text();
+          console.error(`第${i + 1}张图片API错误:`, response.status, errorText);
+          throw new Error(`第${i + 1}张图片API调用失败: ${response.status} - ${errorText}`);
         }
 
         const data = await response.json();
+        console.log(`第${i + 1}张图片API响应:`, data);
         
         // 提取图片URL
         let imageUrl = '';
@@ -186,10 +190,11 @@ async function processImageGenerationTask(taskId: string, prompt: string, imageF
         }
 
         if (!imageUrl) {
+          console.error(`第${i + 1}张图片未找到URL，API响应:`, data);
           throw new Error(`第${i + 1}张图片未找到有效URL`);
         }
 
-        console.log(`第${i + 1}张图片生成成功`);
+        console.log(`第${i + 1}张图片生成成功:`, imageUrl.substring(0, 100) + '...');
         return imageUrl;
       };
 
