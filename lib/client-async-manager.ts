@@ -9,8 +9,13 @@ interface ClientTask {
   error?: string;
   createdAt: number;
   prompt: string;
-  imageFile: File;
+  imageFileData: string;
+  imageFileName: string;
+  imageFileType: string;
   style: string;
+  retryCount?: number; // 重试次数
+  lastAttemptTime?: number; // 最后一次尝试时间
+  maxRetries?: number; // 最大重试次数
 }
 
 interface TaskProgress {
@@ -22,10 +27,15 @@ interface TaskProgress {
 class ClientAsyncManager {
   private readonly STORAGE_KEY = 'ip_creator_tasks';
   private readonly TASK_EXPIRY = 30 * 60 * 1000; // 30分钟
+  private readonly RETRY_TIMEOUT = 2 * 60 * 1000; // 2分钟超时重试
+  private readonly MAX_AUTO_RETRIES = 2; // 最大自动重试次数
 
   // 创建新任务
   async createTask(prompt: string, imageFile: File, style: string): Promise<string> {
     const taskId = `client_task_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    
+    // 🔧 将File对象转换为base64以便存储到localStorage
+    const imageFileData = await this.fileToBase64(imageFile);
     
     const task: ClientTask = {
       taskId,
@@ -34,8 +44,13 @@ class ClientAsyncManager {
       results: [],
       createdAt: Date.now(),
       prompt,
-      imageFile,
-      style
+      imageFileData, // 存储base64数据
+      imageFileName: imageFile.name,
+      imageFileType: imageFile.type,
+      style,
+      retryCount: 0,
+      lastAttemptTime: Date.now(),
+      maxRetries: this.MAX_AUTO_RETRIES
     };
 
     // 存储到localStorage
@@ -46,7 +61,110 @@ class ClientAsyncManager {
     // 立即开始处理任务
     this.processTask(taskId);
     
+    // 🕒 启动2分钟超时检测
+    this.startTimeoutMonitoring(taskId);
+    
     return taskId;
+  }
+
+  // 🕒 启动2分钟超时检测
+  private startTimeoutMonitoring(taskId: string): void {
+    const checkTimeout = () => {
+      const task = this.getTaskStatus(taskId);
+      if (!task) return; // 任务不存在，停止监控
+      
+      // 如果任务已完成或失败，停止监控
+      if (task.status === 'completed' || task.status === 'failed') {
+        return;
+      }
+      
+      const now = Date.now();
+      const timeSinceLastAttempt = now - (task.lastAttemptTime || task.createdAt);
+      
+      // 如果超过2分钟没有更新，检查是否需要重试
+      if (timeSinceLastAttempt > this.RETRY_TIMEOUT) {
+        const currentRetryCount = task.retryCount || 0;
+        
+        if (currentRetryCount < this.MAX_AUTO_RETRIES) {
+          console.log(`⏰ 任务 ${taskId} 超过2分钟未完成，开始第${currentRetryCount + 1}次自动重试...`);
+          this.retryTask(taskId);
+        } else {
+          console.log(`❌ 任务 ${taskId} 已达到最大重试次数(${this.MAX_AUTO_RETRIES})，任务失败`);
+          this.updateTaskStatus(
+            taskId, 
+            'failed', 
+            0, 
+            undefined, 
+            undefined, 
+            `任务超时：已重试${this.MAX_AUTO_RETRIES}次，均超过2分钟未完成。请检查网络连接或稍后重试`
+          );
+          return;
+        }
+      }
+      
+      // 继续监控（每30秒检查一次）
+      setTimeout(checkTimeout, 30 * 1000);
+    };
+    
+    // 首次检查延迟2分钟
+    setTimeout(checkTimeout, this.RETRY_TIMEOUT);
+  }
+
+  // 🔄 重试任务
+  private async retryTask(taskId: string): Promise<void> {
+    const task = this.getTaskStatus(taskId);
+    if (!task) return;
+    
+    // 更新重试计数和时间
+    task.retryCount = (task.retryCount || 0) + 1;
+    task.lastAttemptTime = Date.now();
+    task.status = 'pending';
+    task.progress = 0;
+    task.results = []; // 清空之前的结果，重新开始
+    task.error = undefined;
+    
+    this.saveTask(task);
+    
+    const retryMessage = `🔄 第${task.retryCount}次自动重试 (${task.retryCount}/${this.MAX_AUTO_RETRIES})`;
+    console.log(`${retryMessage} - 任务 ${taskId}`);
+    
+    // 更新UI显示重试状态
+    this.updateTaskStatus(taskId, 'pending', 5, `${retryMessage} - 重新开始生成...`);
+    
+    // 重新开始处理任务
+    this.processTask(taskId);
+    
+    // 重新启动超时监控
+    this.startTimeoutMonitoring(taskId);
+  }
+
+  // 将File对象转换为base64字符串
+  private async fileToBase64(file: File): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const base64 = reader.result as string;
+        // 移除data:image/xxx;base64,前缀，只保留base64数据
+        const base64Data = base64.split(',')[1];
+        resolve(base64Data);
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  }
+
+  // 将base64字符串转换回File对象
+  private base64ToFile(base64Data: string, fileName: string, fileType: string): File {
+    // 将base64转换为Uint8Array
+    const byteCharacters = atob(base64Data);
+    const byteNumbers = new Array(byteCharacters.length);
+    for (let i = 0; i < byteCharacters.length; i++) {
+      byteNumbers[i] = byteCharacters.charCodeAt(i);
+    }
+    const byteArray = new Uint8Array(byteNumbers);
+    
+    // 创建File对象
+    return new File([byteArray], fileName, { type: fileType });
   }
 
   // 查询任务状态
@@ -58,15 +176,19 @@ class ClientAsyncManager {
   // 处理任务（在前端执行）
   private async processTask(taskId: string): Promise<void> {
     const task = this.getTaskStatus(taskId);
-    if (!task) return;
+    if (!task || task.status !== 'pending') return;
 
     try {
       console.log(`📋 开始处理前端任务 ${taskId}...`);
       
-      // 更新状态
-      this.updateTaskStatus(taskId, 'processing', 10, '🔍 正在分析上传图片...');
+      // 🔄 显示重试信息（如果是重试）
+      const retryInfo = (task.retryCount && task.retryCount > 0) 
+        ? ` (第${task.retryCount}次重试)` 
+        : '';
+      
+      this.updateTaskStatus(taskId, 'processing', 10, `🔍 正在分析上传图片...${retryInfo}`);
 
-      // 🔧 使用新的单图片生成API端点
+      // 根据风格构建提示词
       const stylePrompts = {
         cute: `Chibi full-body illustration of the main character from [REF_IMAGE], ignore any background. Precisely preserve the hairstyle, any existing accessories, facial features, expression, gender, and temperament from the reference image, with a slightly slimmer face. IMPORTANT: Only include accessories if they are clearly visible in the reference image. Head-to-body ratio around 1:1.2; big eyes, rounded simplified limbs; layered line art distinguishing: hairstyle, face, torso, limbs, and any visible accessories; flat pastel color block fills with subtle cel-shading shadows and highlight distinction; overall style cute yet handsome; high-resolution square canvas, 1:1 aspect ratio.`,
         toy: `3D isometric full-body toy figurine of the main character from [REF_IMAGE], ignore any background. Preserve exactly the hairstyle, any existing accessories, facial features, expression, gender and temperament from the reference, with a slightly slimmer face. IMPORTANT: Only include accessories if they are clearly visible in the reference image. Render smooth vinyl-like surfaces with clear segmentation into head, torso, arms, legs, joints and any visible accessories; use consistent bevel outlines and soft plastic material feel; apply muted yet vibrant color zones and subtle studio reflections; maintain a perfect blend of adorable and handsome; photorealistic 3D render, square 1:1 aspect ratio.`,
@@ -77,55 +199,66 @@ class ClientAsyncManager {
       let finalPrompt = stylePrompt.replace('[REF_IMAGE]', 'the uploaded reference image');
       finalPrompt += `. CRITICAL: Generate a character based on the uploaded reference image. Maintain the SAME SUBJECT TYPE (if it's an animal, generate an animal; if it's a person, generate a person). Preserve the key characteristics while applying the artistic style.`;
 
-      this.updateTaskStatus(taskId, 'processing', 30, '🎨 AI正在并行生成3张专属IP形象...');
+      this.updateTaskStatus(taskId, 'processing', 30, `🎨 AI正在并行生成3张专属IP形象...${retryInfo}`);
 
-      // 🚀 并行调用新的单图片生成API，每次生成1张独特图片
-      const promises = [];
-      for (let i = 0; i < 3; i++) {
+      // 🌊 流式生成策略：每生成一张立即显示
+      const maxRetries = 2;
+      const totalImages = 3;
+      
+      for (let i = 0; i < totalImages; i++) {
+        console.log(`🖼️ 生成第${i + 1}张独立图片 (尝试 1/${maxRetries + 1})...`);
+        
         const generateSingleImageWithRetry = async (): Promise<string> => {
-          const maxRetries = 2; // 最多重试2次
           let lastError: Error | null = null;
-          
+
           for (let retry = 0; retry <= maxRetries; retry++) {
             try {
-              console.log(`🖼️ 生成第${i + 1}张独立图片 (尝试 ${retry + 1}/${maxRetries + 1})...`);
-
-              // 🎨 为每张图片添加独特的变化种子
-              const variationSeed = i.toString(); // 0, 1, 2 对应不同变化
+              // 🎲 为每张图片添加独特变化种子
+              const variationSeed = i.toString();
               
-              // 准备FormData
+              // 构建请求
               const formData = new FormData();
+              
+              // 🔧 从base64重新构造File对象
+              const base64ToFile = (base64Data: string, filename: string): File => {
+                const binaryString = atob(base64Data);
+                const bytes = new Uint8Array(binaryString.length);
+                for (let i = 0; i < binaryString.length; i++) {
+                  bytes[i] = binaryString.charCodeAt(i);
+                }
+                return new File([bytes], filename, { type: task.imageFileType });
+              };
+              
+              const imageFile = base64ToFile(task.imageFileData, task.imageFileName);
+              
               formData.append('prompt', finalPrompt);
-              formData.append('image', task.imageFile);
-              formData.append('variationSeed', variationSeed); // 关键：变化种子确保独特性
+              formData.append('image', imageFile);
+              formData.append('variationSeed', variationSeed);
 
-              // 调用新的单图片生成API端点（Node.js Runtime，45秒超时）
+              console.log(`🌐 调用单图片生成API (第${i + 1}张，变化种子: ${variationSeed})...`);
+
               const response = await fetch('/api/generate-single-image', {
                 method: 'POST',
                 body: formData,
               });
 
               if (!response.ok) {
-                if (response.status === 408) {
-                  throw new Error(`第${i + 1}张图片生成超时`);
-                }
-                const errorText = await response.text();
-                console.error(`第${i + 1}张图片API错误:`, response.status, errorText);
-                throw new Error(`第${i + 1}张图片API调用失败: ${response.status}`);
+                const errorData = await response.json().catch(() => ({}));
+                const errorMsg = errorData.details || errorData.error || `HTTP ${response.status}`;
+                throw new Error(`第${i + 1}张图片API调用失败: ${errorMsg}`);
               }
 
               const data = await response.json();
-              console.log(`第${i + 1}张图片API响应:`, data);
               
-              // 提取图片URL
               if (!data.success || !data.url) {
-                console.error(`第${i + 1}张图片未找到URL，API响应:`, data);
-                throw new Error(`第${i + 1}张图片未找到有效URL`);
+                console.error(`第${i + 1}张图片API错误:`, response.status, data);
+                throw new Error(`第${i + 1}张图片API响应无效`);
               }
 
               const imageUrl = data.url;
               const variationInfo = data.variation || '独特变化';
               console.log(`✅ 第${i + 1}张独立图片生成成功 (${variationInfo}):`, imageUrl.substring(0, 100) + '...');
+              
               return imageUrl;
               
             } catch (error) {
@@ -143,44 +276,69 @@ class ClientAsyncManager {
           throw lastError || new Error(`第${i + 1}张图片生成完全失败`);
         };
 
-        promises.push(generateSingleImageWithRetry());
+        try {
+          // 🌊 生成单张图片
+          const imageUrl = await generateSingleImageWithRetry();
+          
+          // 🚀 立即更新到任务结果中！用户马上就能看到这张图片
+          const currentTask = this.getTaskStatus(taskId);
+          if (currentTask) {
+            currentTask.results.push(imageUrl);
+            
+            // 计算进度：每张图片完成后更新进度
+            const completedImages = currentTask.results.length;
+            const progress = 30 + Math.floor((completedImages / totalImages) * 60); // 30% + 60%分配给3张图片
+            
+            const progressMessage = retryInfo 
+              ? `✨ 已完成第${completedImages}张图片${retryInfo}，继续生成中... (${completedImages}/${totalImages})`
+              : `✨ 已完成第${completedImages}张图片，继续生成中... (${completedImages}/${totalImages})`;
+            
+            this.updateTaskStatus(taskId, 'processing', progress, progressMessage);
+            
+            // 🔄 保存到localStorage，让轮询立即能获取到新图片
+            this.saveTask(currentTask);
+            
+            console.log(`🎉 第${i + 1}张图片已添加到结果中，当前进度: ${progress}%`);
+          }
+          
+        } catch (error) {
+          console.error(`❌ 第${i + 1}张图片生成最终失败:`, error);
+          // 单张图片失败不影响其他图片继续生成
+          continue;
+        }
       }
 
-      this.updateTaskStatus(taskId, 'processing', 60, '⏳ 等待所有3张独立图片生成完成...');
+      // 检查最终结果
+      const finalTask = this.getTaskStatus(taskId);
+      if (!finalTask) {
+        throw new Error('任务状态丢失');
+      }
+      
+      const successCount = finalTask.results.length;
+      const failedCount = totalImages - successCount;
+      
+      this.updateTaskStatus(taskId, 'processing', 90, `✨ 正在验证生成结果...${retryInfo}`);
 
-      // 🎯 严格要求：必须生成3张真实独立图片，不接受复制
-      const results = await Promise.allSettled(promises);
-      
-      this.updateTaskStatus(taskId, 'processing', 90, '✨ 正在验证3张独立图片的生成结果...');
-
-      // 处理结果 - 只接受真正成功的图片
-      const successResults = results
-        .filter((result): result is PromiseFulfilledResult<string> => result.status === 'fulfilled')
-        .map(result => result.value);
-      
-      const failedCount = results.length - successResults.length;
-      
       // 🚨 严格验证：必须至少有2张成功，否则认为任务失败
-      if (successResults.length < 2) {
-        throw new Error(`生成失败：只成功生成了${successResults.length}张图片，至少需要2张。请检查网络连接或稍后重试`);
+      if (successCount < 2) {
+        throw new Error(`生成失败：只成功生成了${successCount}张图片，至少需要2张。请检查网络连接或稍后重试`);
       }
 
-      // 🚫 移除复制逻辑：如果不足3张，明确告知用户实际数量
-      const actualResults = successResults.slice(0, 3); // 最多3张
-      
-      // 完成任务 - 明确告知实际生成数量
+      // 🎉 任务完成
       const completionMessage = failedCount === 0 
-        ? `🎉 成功生成3张真实独立图片！` 
-        : `🎯 生成完成！成功${actualResults.length}张独立图片，失败${failedCount}张`;
-        
-      this.updateTaskStatus(taskId, 'completed', 100, completionMessage, actualResults);
+        ? `🎉 成功生成${successCount}张真实独立图片！${retryInfo ? ` (第${task.retryCount}次重试成功)` : ''}` 
+        : `🎯 生成完成！成功${successCount}张独立图片，失败${failedCount}张${retryInfo ? ` (第${task.retryCount}次重试成功)` : ''}`;
+
+      this.updateTaskStatus(taskId, 'completed', 100, completionMessage);
       
-      console.log(`🎊 前端任务 ${taskId} 完成，真实生成 ${actualResults.length} 张独立图片，失败 ${failedCount} 张`);
+      console.log(`✅ 前端异步任务 ${taskId} 完成: ${successCount}张成功, ${failedCount}张失败${retryInfo}`);
 
     } catch (error) {
-      console.error(`❌ 前端任务 ${taskId} 处理失败:`, error);
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      this.updateTaskStatus(taskId, 'failed', 0, `生成失败: ${errorMessage}`, [], errorMessage);
+      console.error(`❌ 前端异步任务 ${taskId} 处理失败:`, error);
+      const retryInfo = (task.retryCount && task.retryCount > 0) 
+        ? ` (第${task.retryCount}次重试失败)` 
+        : '';
+      this.updateTaskStatus(taskId, 'failed', 0, undefined, undefined, (error instanceof Error ? error.message : String(error)) + retryInfo);
     }
   }
 
@@ -198,6 +356,7 @@ class ClientAsyncManager {
 
     task.status = status;
     task.progress = progress;
+    task.lastAttemptTime = Date.now(); // 🕒 更新最后活动时间
     if (results) task.results = results;
     if (error) task.error = error;
 
@@ -251,6 +410,50 @@ class ClientAsyncManager {
       default:
         return '状态未知';
     }
+  }
+
+  // 🔄 获取带重试信息的状态消息
+  getDetailedStatusMessage(taskId: string): string {
+    const task = this.getTaskStatus(taskId);
+    if (!task) return '❓ 任务不存在';
+
+    const baseMessage = this.getStatusMessage(task.status, task.progress);
+    const retryInfo = (task.retryCount && task.retryCount > 0) 
+      ? ` (第${task.retryCount}次重试)` 
+      : '';
+
+    // 如果任务失败且还有重试机会，显示重试倒计时
+    if (task.status === 'failed' && task.retryCount && task.retryCount < this.MAX_AUTO_RETRIES) {
+      const timeLeft = this.RETRY_TIMEOUT - (Date.now() - (task.lastAttemptTime || task.createdAt));
+      if (timeLeft > 0) {
+        const minutesLeft = Math.ceil(timeLeft / (60 * 1000));
+        return `⏰ 任务失败，将在${minutesLeft}分钟后自动重试 (第${(task.retryCount || 0) + 1}次重试)`;
+      }
+    }
+
+    return baseMessage + retryInfo;
+  }
+
+  // 🕒 检查任务是否需要重试提醒
+  checkRetryStatus(taskId: string): { needsRetry: boolean; timeLeft: number; retryCount: number } {
+    const task = this.getTaskStatus(taskId);
+    if (!task) return { needsRetry: false, timeLeft: 0, retryCount: 0 };
+
+    const now = Date.now();
+    const timeSinceLastAttempt = now - (task.lastAttemptTime || task.createdAt);
+    const currentRetryCount = task.retryCount || 0;
+    
+    const needsRetry = task.status === 'processing' && 
+                      timeSinceLastAttempt > this.RETRY_TIMEOUT && 
+                      currentRetryCount < this.MAX_AUTO_RETRIES;
+    
+    const timeLeft = Math.max(0, this.RETRY_TIMEOUT - timeSinceLastAttempt);
+    
+    return {
+      needsRetry,
+      timeLeft,
+      retryCount: currentRetryCount
+    };
   }
 
   // 清理所有任务

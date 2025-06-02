@@ -3,13 +3,8 @@ import type React from "react"
 import type { Metadata } from "next"
 import { Inter } from "next/font/google"
 import "./globals.css"
-import { StagewiseToolbar } from '@stagewise/toolbar-next';
 
 const inter = Inter({ subsets: ["latin"] })
-
-const stagewiseConfig = {
-  plugins: []
-};
 
 export const metadata: Metadata = {
   title: "IP创造师 - 5分钟创造专属IP形象",
@@ -26,7 +21,6 @@ export default function RootLayout({
   return (
     <html lang="zh-CN">
       <body className={inter.className}>
-        {process.env.NODE_ENV === 'development' && <StagewiseToolbar config={stagewiseConfig} />}
         {children}
       </body>
     </html>
