@@ -29,7 +29,7 @@ export default function HomePage() {
   const [showResults, setShowResults] = useState(false)
   const [errorMessage, setErrorMessage] = useState("")
   const [imageLoadStates, setImageLoadStates] = useState<Record<string, 'loading' | 'loaded' | 'error'>>({})
-  const [generationMode, setGenerationMode] = useState<'auto' | 'sync' | 'async' | 'client-async'>('client-async')
+  const [generationMode, setGenerationMode] = useState<'auto' | 'sync' | 'async' | 'client-async'>('auto')
 
   const router = useRouter()
 

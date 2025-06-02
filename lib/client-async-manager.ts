@@ -213,46 +213,72 @@ class ClientAsyncManager {
 
           for (let retry = 0; retry <= maxRetries; retry++) {
             try {
+              console.log(`🌐 调用单图片生成API (第${i + 1}张，重试第${retry + 1}次)...`);
+              
               // 🎲 为每张图片添加独特变化种子
               const variationSeed = i.toString();
               
               // 构建请求
               const formData = new FormData();
               
-              // 🔧 从base64重新构造File对象
-              const base64ToFile = (base64Data: string, filename: string): File => {
-                const binaryString = atob(base64Data);
-                const bytes = new Uint8Array(binaryString.length);
-                for (let i = 0; i < binaryString.length; i++) {
-                  bytes[i] = binaryString.charCodeAt(i);
+              // 🔧 从base64重新构造File对象，增强错误处理
+              let imageFile: File;
+              try {
+                imageFile = this.base64ToFile(task.imageFileData, task.imageFileName, task.imageFileType);
+                
+                // 验证File对象
+                if (!imageFile || imageFile.size === 0) {
+                  throw new Error('重构的File对象无效或为空');
                 }
-                return new File([bytes], filename, { type: task.imageFileType });
-              };
-              
-              const imageFile = base64ToFile(task.imageFileData, task.imageFileName);
+                
+                console.log(`✅ File对象重构成功: ${imageFile.name}, 大小: ${imageFile.size} bytes, 类型: ${imageFile.type}`);
+                
+              } catch (fileError) {
+                console.error('File对象重构失败:', fileError);
+                throw new Error(`图片文件处理失败: ${fileError instanceof Error ? fileError.message : String(fileError)}`);
+              }
               
               formData.append('prompt', finalPrompt);
               formData.append('image', imageFile);
               formData.append('variationSeed', variationSeed);
 
-              console.log(`🌐 调用单图片生成API (第${i + 1}张，变化种子: ${variationSeed})...`);
+              // 🚨 增强错误处理和超时控制
+              const controller = new AbortController();
+              const timeoutId = setTimeout(() => {
+                controller.abort();
+                console.error('❌ API请求超时');
+              }, 90000); // 90秒超时
 
               const response = await fetch('/api/generate-single-image', {
                 method: 'POST',
                 body: formData,
+                signal: controller.signal,
+                // 添加更多headers帮助调试
+                headers: {
+                  'Accept': 'application/json',
+                }
+              }).finally(() => {
+                clearTimeout(timeoutId);
               });
 
               if (!response.ok) {
-                const errorData = await response.json().catch(() => ({}));
-                const errorMsg = errorData.details || errorData.error || `HTTP ${response.status}`;
-                throw new Error(`第${i + 1}张图片API调用失败: ${errorMsg}`);
+                let errorDetails = '';
+                try {
+                  const errorData = await response.json();
+                  errorDetails = errorData.details || errorData.error || errorData.message || '';
+                } catch {
+                  errorDetails = await response.text().catch(() => '无法解析错误响应');
+                }
+                
+                console.error(`❌ API响应错误 ${response.status}:`, errorDetails);
+                throw new Error(`第${i + 1}张图片API调用失败: HTTP ${response.status} - ${errorDetails}`);
               }
 
               const data = await response.json();
               
               if (!data.success || !data.url) {
-                console.error(`第${i + 1}张图片API错误:`, response.status, data);
-                throw new Error(`第${i + 1}张图片API响应无效`);
+                console.error(`❌ 第${i + 1}张图片API响应格式错误:`, data);
+                throw new Error(`第${i + 1}张图片API响应无效 - 缺少成功标志或URL`);
               }
 
               const imageUrl = data.url;
@@ -263,17 +289,29 @@ class ClientAsyncManager {
               
             } catch (error) {
               lastError = error instanceof Error ? error : new Error(String(error));
-              console.warn(`第${i + 1}张图片生成失败 (尝试 ${retry + 1}/${maxRetries + 1}):`, lastError.message);
+              console.warn(`⚠️ 第${i + 1}张图片生成失败 (尝试 ${retry + 1}/${maxRetries + 1}):`, lastError.message);
               
-              // 如果不是最后一次重试，等待一下再重试
+              // 增强错误分类和处理
+              if (lastError.name === 'AbortError') {
+                console.log('🕐 请求被取消（可能是超时）');
+                break; // 超时不重试
+              }
+              
+              if (lastError.message.includes('Failed to fetch') || lastError.message.includes('网络')) {
+                console.log('🌐 检测到网络连接问题');
+              }
+              
+              // 如果不是最后一次重试，等待后继续
               if (retry < maxRetries) {
-                await new Promise(resolve => setTimeout(resolve, 2000)); // 等待2秒
+                const waitTime = (retry + 1) * 2000; // 递增等待时间：2s, 4s
+                console.log(`⏳ 等待${waitTime}ms后重试...`);
+                await new Promise(resolve => setTimeout(resolve, waitTime));
               }
             }
           }
           
           // 所有重试都失败了
-          throw lastError || new Error(`第${i + 1}张图片生成完全失败`);
+          throw lastError || new Error(`第${i + 1}张图片生成完全失败 - 已尝试${maxRetries + 1}次`);
         };
 
         try {
@@ -303,6 +341,9 @@ class ClientAsyncManager {
           
         } catch (error) {
           console.error(`❌ 第${i + 1}张图片生成最终失败:`, error);
+          // 记录具体的失败原因但不中止整体任务
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          console.log(`📝 失败详情: ${errorMessage}`);
           // 单张图片失败不影响其他图片继续生成
           continue;
         }
@@ -311,7 +352,7 @@ class ClientAsyncManager {
       // 检查最终结果
       const finalTask = this.getTaskStatus(taskId);
       if (!finalTask) {
-        throw new Error('任务状态丢失');
+        throw new Error('任务状态丢失 - localStorage可能被清理');
       }
       
       const successCount = finalTask.results.length;
@@ -319,15 +360,15 @@ class ClientAsyncManager {
       
       this.updateTaskStatus(taskId, 'processing', 90, `✨ 正在验证生成结果...${retryInfo}`);
 
-      // 🚨 严格验证：必须至少有2张成功，否则认为任务失败
-      if (successCount < 2) {
-        throw new Error(`生成失败：只成功生成了${successCount}张图片，至少需要2张。请检查网络连接或稍后重试`);
+      // 🚨 严格验证：必须至少有1张成功（降低要求以提高容错性）
+      if (successCount < 1) {
+        throw new Error(`生成完全失败：没有成功生成任何图片。请检查网络连接、API配置或稍后重试`);
       }
 
       // 🎉 任务完成
-      const completionMessage = failedCount === 0 
+      const completionMessage = successCount >= 2
         ? `🎉 成功生成${successCount}张真实独立图片！${retryInfo ? ` (第${task.retryCount}次重试成功)` : ''}` 
-        : `🎯 生成完成！成功${successCount}张独立图片，失败${failedCount}张${retryInfo ? ` (第${task.retryCount}次重试成功)` : ''}`;
+        : `🎯 部分成功！生成了${successCount}张图片${failedCount > 0 ? `，${failedCount}张失败` : ''}${retryInfo ? ` (第${task.retryCount}次重试)` : ''}`;
 
       this.updateTaskStatus(taskId, 'completed', 100, completionMessage);
       
@@ -335,10 +376,26 @@ class ClientAsyncManager {
 
     } catch (error) {
       console.error(`❌ 前端异步任务 ${taskId} 处理失败:`, error);
+      
+      // 增强错误信息
+      let errorMessage = error instanceof Error ? error.message : String(error);
+      
+      // 分析错误类型并提供具体建议
+      if (errorMessage.includes('Failed to fetch') || errorMessage.includes('网络')) {
+        errorMessage = '网络连接失败，请检查网络连接后重试';
+      } else if (errorMessage.includes('File对象') || errorMessage.includes('文件处理')) {
+        errorMessage = '图片文件处理失败，请重新上传图片';
+      } else if (errorMessage.includes('API调用失败')) {
+        errorMessage = '图片生成服务暂时不可用，请稍后重试';
+      } else if (errorMessage.includes('localStorage')) {
+        errorMessage = '浏览器存储异常，请清理缓存或刷新页面重试';
+      }
+      
       const retryInfo = (task.retryCount && task.retryCount > 0) 
         ? ` (第${task.retryCount}次重试失败)` 
         : '';
-      this.updateTaskStatus(taskId, 'failed', 0, undefined, undefined, (error instanceof Error ? error.message : String(error)) + retryInfo);
+      
+      this.updateTaskStatus(taskId, 'failed', 0, undefined, undefined, errorMessage + retryInfo);
     }
   }
 
