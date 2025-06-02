@@ -40,104 +40,151 @@ export async function POST(req: NextRequest) {
     
     finalPrompt += `. CRITICAL: Generate a character based on the uploaded reference image. Maintain the SAME SUBJECT TYPE (if it's an animal, generate an animal; if it's a person, generate a person). Preserve the key characteristics while applying the artistic style ${selectedVariation}.`;
     
-    // 🔧 兼容Node.js Runtime的文件处理
+    // 🔧 增强的文件处理逻辑，兼容前端异步管理器
     let imageBuffer: Buffer;
     try {
-      // 检查文件类型
-      console.log('文件类型分析:', {
+      // 详细分析文件对象
+      console.log('🔍 文件对象详细分析:', {
         type: typeof imageFile,
         constructor: imageFile?.constructor?.name,
-        isString: typeof imageFile === 'string',
-        hasName: 'name' in imageFile,
-        hasSize: 'size' in imageFile,
-        hasArrayBuffer: typeof imageFile?.arrayBuffer,
-        hasStream: typeof imageFile?.stream
+        isFile: imageFile instanceof File,
+        isBlob: imageFile instanceof Blob,
+        hasArrayBuffer: typeof imageFile?.arrayBuffer === 'function',
+        hasStream: typeof imageFile?.stream === 'function',
+        hasText: typeof imageFile?.text === 'function',
+        name: imageFile?.name,
+        size: imageFile?.size,
+        typeProperty: imageFile?.type
       });
 
-      // 方法1: 检查是否为字符串类型（可能是base64数据）
-      if (typeof imageFile === 'string') {
-        console.log('处理字符串类型文件数据...');
-        // 检查是否为base64格式
-        if ((imageFile as string).startsWith('data:')) {
-          // data:image/jpeg;base64,xxxxx 格式
-          const base64Data = (imageFile as string).split(',')[1];
+      // 🚨 核心修复：检测前端异步管理器重构的File对象
+      if (imageFile && typeof imageFile === 'object') {
+        
+        // 方法1: 标准File对象处理
+        if (typeof imageFile.arrayBuffer === 'function') {
+          console.log('✅ 使用标准 arrayBuffer 方法');
+          const arrayBuffer = await imageFile.arrayBuffer();
+          imageBuffer = Buffer.from(arrayBuffer);
+          console.log('✅ arrayBuffer 处理成功，大小:', imageBuffer.length, 'bytes');
+        }
+        // 方法2: Blob对象处理
+        else if (typeof imageFile.stream === 'function') {
+          console.log('✅ 使用 stream 方法处理Blob');
+          const stream = imageFile.stream();
+          const reader = stream.getReader();
+          const chunks: Uint8Array[] = [];
+          
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            chunks.push(value);
+          }
+          
+          const totalLength = chunks.reduce((acc, chunk) => acc + chunk.length, 0);
+          const merged = new Uint8Array(totalLength);
+          let offset = 0;
+          for (const chunk of chunks) {
+            merged.set(chunk, offset);
+            offset += chunk.length;
+          }
+          imageBuffer = Buffer.from(merged);
+          console.log('✅ stream 处理成功，大小:', imageBuffer.length, 'bytes');
+        }
+        // 方法3: text方法处理（可能是base64编码）
+        else if (typeof imageFile.text === 'function') {
+          console.log('✅ 使用 text 方法处理（可能是base64）');
+          const textContent = await imageFile.text();
+          
+          // 检查是否为base64格式
+          if (textContent.startsWith('data:')) {
+            // data:image/jpeg;base64,xxxxx 格式
+            const base64Data = textContent.split(',')[1];
+            imageBuffer = Buffer.from(base64Data, 'base64');
+          } else {
+            // 尝试作为直接base64字符串
+            try {
+              imageBuffer = Buffer.from(textContent, 'base64');
+            } catch {
+              // 如果不是base64，尝试作为二进制字符串
+              imageBuffer = Buffer.from(textContent, 'binary');
+            }
+          }
+          console.log('✅ text 处理成功，大小:', imageBuffer.length, 'bytes');
+        }
+        // 方法4: 直接访问内部数据
+        else if ((imageFile as any)._buffer || (imageFile as any).buffer) {
+          console.log('✅ 直接访问内部buffer');
+          const buffer = (imageFile as any)._buffer || (imageFile as any).buffer;
+          imageBuffer = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer);
+          console.log('✅ 内部buffer处理成功，大小:', imageBuffer.length, 'bytes');
+        }
+        // 方法5: 尝试JSON序列化检查
+        else {
+          console.log('🔍 尝试分析对象结构...');
+          const objectInfo = JSON.stringify(Object.getOwnPropertyNames(imageFile).slice(0, 10));
+          console.log('对象属性:', objectInfo);
+          
+          // 如果对象有data属性，可能是某种封装格式
+          if ((imageFile as any).data) {
+            const data = (imageFile as any).data;
+            if (typeof data === 'string') {
+              // base64字符串
+              imageBuffer = Buffer.from(data, 'base64');
+            } else if (Array.isArray(data) || data instanceof Uint8Array) {
+              // 数组格式
+              imageBuffer = Buffer.from(data);
+            } else {
+              throw new Error('不支持的data格式');
+            }
+          } else {
+            throw new Error('无法识别的文件格式，没有找到可用的数据提取方法');
+          }
+        }
+      } 
+      // 处理字符串类型（可能是前端传来的base64）
+      else if (typeof imageFile === 'string') {
+        console.log('✅ 处理字符串类型的文件数据');
+        const fileStr = imageFile as string;
+        if (fileStr.startsWith('data:')) {
+          const base64Data = fileStr.split(',')[1];
           imageBuffer = Buffer.from(base64Data, 'base64');
         } else {
-          // 直接的base64字符串
-          imageBuffer = Buffer.from(imageFile as string, 'base64');
+          imageBuffer = Buffer.from(fileStr, 'base64');
         }
-        console.log('字符串数据处理成功，大小:', imageBuffer.length, 'bytes');
+        console.log('✅ 字符串处理成功，大小:', imageBuffer.length, 'bytes');
       }
-      // 方法2: 优先尝试 arrayBuffer
-      else if (typeof imageFile.arrayBuffer === 'function') {
-        console.log('使用 arrayBuffer 方法处理文件');
-        imageBuffer = Buffer.from(await imageFile.arrayBuffer());
-      } 
-      // 方法3: 尝试 stream 方法
-      else if (typeof imageFile.stream === 'function') {
-        console.log('使用 stream 方法处理文件');
-        const stream = imageFile.stream();
-        const reader = stream.getReader();
-        const chunks: Uint8Array[] = [];
-        
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          chunks.push(value);
-        }
-        
-        // 计算总长度并合并
-        const totalLength = chunks.reduce((acc, chunk) => acc + chunk.length, 0);
-        const merged = new Uint8Array(totalLength);
-        let offset = 0;
-        for (const chunk of chunks) {
-          merged.set(chunk, offset);
-          offset += chunk.length;
-        }
-        imageBuffer = Buffer.from(merged);
-      }
-      // 方法4: 尝试直接访问底层数据
-      else if ((imageFile as any).buffer) {
-        console.log('使用 buffer 属性处理文件');
-        imageBuffer = Buffer.from((imageFile as any).buffer);
-      }
-      // 方法5: 最后的fallback，尝试转换为字符串再转buffer
       else {
-        console.log('尝试其他方法处理文件...');
-        // 如果是Blob或类似对象，尝试text()方法然后转换
-        if (typeof (imageFile as any).text === 'function') {
-          const text = await (imageFile as any).text();
-          imageBuffer = Buffer.from(text, 'binary');
-        } else {
-          throw new Error('无法识别的文件格式，不支持当前文件对象类型');
-        }
+        const fileType = typeof imageFile;
+        const constructorName = (imageFile as any)?.constructor?.name || 'unknown';
+        throw new Error(`不支持的文件类型: ${fileType}, constructor: ${constructorName}`);
       }
       
-      console.log('文件处理成功，大小:', imageBuffer.length, 'bytes');
+      // 验证buffer有效性
+      if (!imageBuffer || imageBuffer.length === 0) {
+        throw new Error('处理后的图片数据为空');
+      }
+      
+      console.log('🎉 文件处理完全成功！最终大小:', imageBuffer.length, 'bytes');
       
     } catch (bufferError) {
-      console.error('图片文件处理失败:', bufferError);
-      console.error('文件对象信息:', {
+      console.error('❌ 图片文件处理失败:', bufferError);
+      console.error('📊 详细文件信息:', {
         name: imageFile?.name,
         size: imageFile?.size,
         type: imageFile?.type,
+        constructor: imageFile?.constructor?.name,
         hasArrayBuffer: typeof imageFile?.arrayBuffer,
         hasStream: typeof imageFile?.stream,
-        constructor: imageFile?.constructor?.name,
-        keys: Object.keys(imageFile || {})
+        hasText: typeof imageFile?.text,
+        objectKeys: imageFile ? Object.getOwnPropertyNames(imageFile).slice(0, 10) : 'null'
       });
+      
       return Response.json({ 
-        error: '图片文件处理失败',
+        error: '独立图片生成失败',
         details: bufferError instanceof Error ? bufferError.message : String(bufferError),
-        fileInfo: {
-          name: imageFile?.name,
-          size: imageFile?.size,
-          type: imageFile?.type,
-          hasArrayBuffer: typeof imageFile?.arrayBuffer,
-          hasStream: typeof imageFile?.stream,
-          constructor: imageFile?.constructor?.name
-        }
-      }, { status: 400 });
+        runtime: 'nodejs',
+        suggestion: '请检查上传的图片文件格式和完整性'
+      }, { status: 500 });
     }
     
     // 🔧 真正独立生成策略：每次调用都有微妙差异
