@@ -9,13 +9,15 @@ interface ClientTask {
   error?: string;
   createdAt: number;
   prompt: string;
-  imageFileData: string;
+  imageFileData: string; // 只在处理时临时存储
   imageFileName: string;
   imageFileType: string;
   style: string;
   retryCount?: number; // 重试次数
   lastAttemptTime?: number; // 最后一次尝试时间
   maxRetries?: number; // 最大重试次数
+  // 新增：轻量级存储标志
+  isLightweight?: boolean; // 是否为轻量级存储（不包含图片数据）
 }
 
 interface TaskProgress {
@@ -53,9 +55,12 @@ class ClientAsyncManager {
       maxRetries: this.MAX_AUTO_RETRIES
     };
 
-    // 存储到localStorage
+    // 🧠 先保存完整任务到内存
+    this.memoryTasks[taskId] = task;
+
+    // 🎯 然后保存轻量级版本到localStorage
     this.saveTask(task);
-    
+
     console.log('🚀 创建前端异步任务:', taskId);
     
     // 立即开始处理任务
@@ -173,7 +178,20 @@ class ClientAsyncManager {
   // 查询任务状态
   getTaskStatus(taskId: string): ClientTask | null {
     const tasks = this.getAllTasks();
-    return tasks[taskId] || null;
+    const task = tasks[taskId];
+
+    if (!task) return null;
+
+    // 🔄 如果是轻量级任务且需要图片数据，尝试从内存恢复
+    if (task.isLightweight && !task.imageFileData && this.memoryTasks[taskId]) {
+      const memoryTask = this.memoryTasks[taskId];
+      if (memoryTask.imageFileData) {
+        task.imageFileData = memoryTask.imageFileData;
+        task.isLightweight = false;
+      }
+    }
+
+    return task;
   }
 
   // 处理任务（在前端执行）
@@ -264,30 +282,82 @@ class ClientAsyncManager {
 
   // 保存任务到localStorage
   private saveTask(task: ClientTask): void {
-    const tasks = this.getAllTasks();
-    tasks[task.taskId] = task;
-    localStorage.setItem(this.STORAGE_KEY, JSON.stringify(tasks));
+    try {
+      const tasks = this.getAllTasks();
+
+      // 🎯 创建轻量级任务副本（移除大数据）
+      const lightweightTask = this.createLightweightTask(task);
+      tasks[task.taskId] = lightweightTask;
+
+      // 🧹 在保存前检查存储大小并清理
+      this.cleanupStorageIfNeeded(tasks);
+
+      const dataToStore = JSON.stringify(tasks);
+
+      // 🚨 检查数据大小，如果仍然太大则进行更激进的清理
+      if (dataToStore.length > 1 * 1024 * 1024) { // 降低到1MB限制
+        console.warn('⚠️ localStorage数据过大，开始激进清理...');
+        this.aggressiveCleanup(tasks);
+        const cleanedData = JSON.stringify(tasks);
+        localStorage.setItem(this.STORAGE_KEY, cleanedData);
+      } else {
+        localStorage.setItem(this.STORAGE_KEY, dataToStore);
+      }
+
+    } catch (error) {
+      if (error instanceof Error && error.name === 'QuotaExceededError') {
+        console.warn('⚠️ localStorage配额超出，使用内存模式...');
+        // 不再抛出错误，改为使用内存模式
+        this.useMemoryMode(task);
+      } else {
+        console.error('保存任务失败:', error);
+        // 其他错误也使用内存模式
+        this.useMemoryMode(task);
+      }
+    }
+  }
+
+  // 🎯 创建轻量级任务（移除大数据）
+  private createLightweightTask(task: ClientTask): ClientTask {
+    const lightweightTask = { ...task };
+
+    // 🚀 总是清空图片数据，因为现在使用文件URL而不是base64
+    lightweightTask.imageFileData = ''; // 清空图片数据
+    lightweightTask.isLightweight = true;
+
+    return lightweightTask;
+  }
+
+  // 🧠 内存模式：当localStorage不可用时使用
+  private memoryTasks: Record<string, ClientTask> = {};
+
+  private useMemoryMode(task: ClientTask): void {
+    console.log('🧠 使用内存模式存储任务:', task.taskId);
+    this.memoryTasks[task.taskId] = task;
   }
 
   // 获取所有任务
   private getAllTasks(): Record<string, ClientTask> {
     try {
       const data = localStorage.getItem(this.STORAGE_KEY);
-      if (!data) return {};
-      const tasks = JSON.parse(data);
-      
+      const localTasks = data ? JSON.parse(data) : {};
+
+      // 合并localStorage和内存中的任务
+      const allTasks = { ...localTasks, ...this.memoryTasks };
+
       // 清理过期任务
       const now = Date.now();
-      Object.keys(tasks).forEach(taskId => {
-        if (now - tasks[taskId].createdAt > this.TASK_EXPIRY) {
-          delete tasks[taskId];
+      Object.keys(allTasks).forEach(taskId => {
+        if (now - allTasks[taskId].createdAt > this.TASK_EXPIRY) {
+          delete allTasks[taskId];
+          delete this.memoryTasks[taskId]; // 同时清理内存
         }
       });
-      
-      return tasks;
+
+      return allTasks;
     } catch (error) {
-      console.error('读取localStorage任务失败:', error);
-      return {};
+      console.error('读取任务失败，使用内存模式:', error);
+      return { ...this.memoryTasks };
     }
   }
 
@@ -357,7 +427,115 @@ class ClientAsyncManager {
   // 清理所有任务
   clearAllTasks(): void {
     localStorage.removeItem(this.STORAGE_KEY);
-    console.log('已清理所有本地任务');
+    this.memoryTasks = {}; // 清理内存任务
+    console.log('已清理所有本地任务和内存任务');
+  }
+
+  // 🧹 智能清理：检查存储大小并按需清理
+  private cleanupStorageIfNeeded(tasks: Record<string, ClientTask>): void {
+    const now = Date.now();
+    let cleaned = false;
+
+    // 1. 清理已完成超过10分钟的任务
+    Object.keys(tasks).forEach(taskId => {
+      const task = tasks[taskId];
+      if (task.status === 'completed' && (now - task.createdAt) > 10 * 60 * 1000) {
+        delete tasks[taskId];
+        cleaned = true;
+      }
+    });
+
+    // 2. 清理失败超过5分钟的任务
+    Object.keys(tasks).forEach(taskId => {
+      const task = tasks[taskId];
+      if (task.status === 'failed' && (now - task.createdAt) > 5 * 60 * 1000) {
+        delete tasks[taskId];
+        cleaned = true;
+      }
+    });
+
+    // 3. 如果任务数量超过5个，保留最新的5个
+    const taskIds = Object.keys(tasks);
+    if (taskIds.length > 5) {
+      const sortedTasks = taskIds
+        .map(id => ({ id, createdAt: tasks[id].createdAt }))
+        .sort((a, b) => b.createdAt - a.createdAt)
+        .slice(5); // 删除最旧的任务
+
+      sortedTasks.forEach(({ id }) => {
+        delete tasks[id];
+        cleaned = true;
+      });
+    }
+
+    if (cleaned) {
+      console.log('🧹 已清理过期和多余的任务');
+    }
+  }
+
+  // 🚨 激进清理：保留最少必要数据
+  private aggressiveCleanup(tasks: Record<string, ClientTask>): void {
+    const now = Date.now();
+
+    // 1. 删除所有已完成超过1分钟的任务
+    Object.keys(tasks).forEach(taskId => {
+      if (tasks[taskId].status === 'completed' && (now - tasks[taskId].createdAt) > 60 * 1000) {
+        delete tasks[taskId];
+      }
+    });
+
+    // 2. 删除所有失败的任务
+    Object.keys(tasks).forEach(taskId => {
+      if (tasks[taskId].status === 'failed') {
+        delete tasks[taskId];
+      }
+    });
+
+    // 3. 对于所有剩余任务，清空图片数据
+    Object.keys(tasks).forEach(taskId => {
+      const task = tasks[taskId];
+      if (task.imageFileData) {
+        task.imageFileData = ''; // 清空图片数据
+        task.isLightweight = true;
+      }
+    });
+
+    // 4. 只保留最新的2个任务
+    const taskIds = Object.keys(tasks);
+    if (taskIds.length > 2) {
+      const sortedTasks = taskIds
+        .map(id => ({ id, createdAt: tasks[id].createdAt }))
+        .sort((a, b) => b.createdAt - a.createdAt)
+        .slice(2); // 删除除了最新2个之外的所有任务
+
+      sortedTasks.forEach(({ id }) => {
+        delete tasks[id];
+      });
+    }
+
+    console.log('🚨 已执行激进清理，保留最新2个任务');
+  }
+
+  // 🆘 紧急清理：清空所有数据
+  private emergencyCleanup(): void {
+    try {
+      // 清空当前存储
+      localStorage.removeItem(this.STORAGE_KEY);
+
+      // 尝试清理其他可能的大数据
+      const keysToCheck = ['ip_creator_cache', 'ip_creator_images', 'ip_creator_temp'];
+      keysToCheck.forEach(key => {
+        try {
+          localStorage.removeItem(key);
+        } catch (e) {
+          // 忽略清理错误
+        }
+      });
+
+      console.log('🆘 已执行紧急清理');
+    } catch (error) {
+      console.error('紧急清理失败:', error);
+    }
   }
 
   // 🔄 启动5秒间隔轮询监听机制

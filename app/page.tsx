@@ -2,9 +2,9 @@
 
 import type React from "react"
 
-import { useState, useCallback } from "react"
+import { useState, useCallback, useEffect } from "react"
 import { useRouter } from "next/navigation"
-import { Sparkles, Menu, Upload, X, Zap, Palette, Cpu, ArrowRight } from "lucide-react"
+import { Sparkles, Menu, Upload, X, Zap, Palette, Cpu, ArrowRight, Trash2 } from "lucide-react"
 import { generateImageWithReference, generateImageAsync, generateImageWithClientAsync } from "@/lib/api"
 
 interface StyleOption {
@@ -29,9 +29,60 @@ export default function HomePage() {
   const [showResults, setShowResults] = useState(false)
   const [errorMessage, setErrorMessage] = useState("")
   const [imageLoadStates, setImageLoadStates] = useState<Record<string, 'loading' | 'loaded' | 'error'>>({})
-  const [generationMode, setGenerationMode] = useState<'auto' | 'sync' | 'async' | 'client-async'>('auto')
+  const [storageInfo, setStorageInfo] = useState<{ used: number; total: number } | null>(null)
 
   const router = useRouter()
+
+  // 检查存储使用情况
+  const checkStorageUsage = useCallback(() => {
+    try {
+      const data = localStorage.getItem('ip_creator_tasks');
+      const used = data ? new Blob([data]).size : 0;
+      const total = 5 * 1024 * 1024; // 5MB 估算
+      setStorageInfo({ used, total });
+    } catch (error) {
+      console.error('检查存储失败:', error);
+    }
+  }, []);
+
+  // 清理存储
+  const clearStorage = useCallback(() => {
+    try {
+      localStorage.removeItem('ip_creator_tasks');
+      // 清理其他可能的存储
+      const keysToCheck = ['ip_creator_cache', 'ip_creator_images', 'ip_creator_temp'];
+      keysToCheck.forEach(key => {
+        try {
+          localStorage.removeItem(key);
+        } catch (e) {
+          // 忽略清理错误
+        }
+      });
+
+      checkStorageUsage();
+      alert('✅ 存储清理完成！现在可以正常使用了。');
+    } catch (error) {
+      console.error('清理存储失败:', error);
+      alert('❌ 清理失败，请手动刷新页面重试');
+    }
+  }, [checkStorageUsage]);
+
+  // 页面加载时检查存储并自动清理
+  useEffect(() => {
+    // 立即清理一次存储
+    try {
+      const data = localStorage.getItem('ip_creator_tasks');
+      if (data && new Blob([data]).size > 2 * 1024 * 1024) { // 超过2MB自动清理
+        console.log('🧹 检测到存储过大，自动清理...');
+        clearStorage();
+      } else {
+        checkStorageUsage();
+      }
+    } catch (error) {
+      console.error('检查存储失败:', error);
+      clearStorage(); // 出错时也清理
+    }
+  }, [checkStorageUsage, clearStorage]);
 
   const styleOptions: StyleOption[] = [
     {
@@ -113,103 +164,22 @@ export default function HomePage() {
     setGenerationStage("");
 
     try {
-      let generatedImageUrls: string[] = [];
+      // 🚀 固定使用前端异步模式（最优模式）
+      console.log('使用前端异步模式生成（浏览器本地缓存）...');
+      setGenerationStage("🚀 启动智能生成模式，并行处理3张独特图片...");
+      setGenerationProgress(10);
 
-      if (generationMode === 'client-async') {
-        // 🚀 新增：前端异步模式
-        console.log('用户选择前端异步模式生成（浏览器本地缓存）...');
-        setGenerationStage("🌐 启动前端异步模式，使用浏览器缓存...");
-        setGenerationProgress(10);
+      const generatedImageUrls = await generateImageWithClientAsync({
+        prompt: '生成专属IP形象',
+        imageFile: uploadedImage,
+        style: selectedStyle as 'cute' | 'toy' | 'cyber',
+        customRequirements: customInput || undefined,
+      }, (status) => {
+        // 实时更新进度
+        setGenerationProgress(Math.max(10, status.progress));
+        setGenerationStage(status.message);
+      });
 
-        generatedImageUrls = await generateImageWithClientAsync({
-          prompt: '生成专属IP形象',
-          imageFile: uploadedImage,
-          style: selectedStyle as 'cute' | 'toy' | 'cyber',
-          customRequirements: customInput || undefined,
-        }, (status) => {
-          // 实时更新进度
-          setGenerationProgress(Math.max(10, status.progress));
-          setGenerationStage(status.message);
-        });
-
-      } else if (generationMode === 'async') {
-        // 服务器异步模式
-        console.log('用户选择服务器异步模式生成...');
-        setGenerationStage("🚀 启动服务器异步任务模式...");
-        setGenerationProgress(10);
-
-        generatedImageUrls = await generateImageAsync({
-          prompt: '生成专属IP形象',
-          imageFile: uploadedImage,
-          style: selectedStyle as 'cute' | 'toy' | 'cyber',
-          customRequirements: customInput || undefined,
-        }, (status) => {
-          // 实时更新进度
-          setGenerationProgress(Math.max(10, status.progress));
-          setGenerationStage(status.message);
-        });
-
-      } else if (generationMode === 'sync') {
-        // 直接使用同步模式
-        console.log('用户选择同步模式生成（Edge Runtime）...');
-        setGenerationStage("⚡ 使用Edge Runtime快速生成...");
-        setGenerationProgress(20);
-
-        generatedImageUrls = await generateImageWithReference({
-          prompt: '生成专属IP形象',
-          imageFile: uploadedImage,
-          style: selectedStyle as 'cute' | 'toy' | 'cyber',
-          customRequirements: customInput || undefined,
-        });
-
-      } else {
-        // 自动模式：先尝试同步，失败后回退到前端异步
-        console.log('自动模式：先尝试Edge Runtime同步生成...');
-        setGenerationStage("⚡ 尝试快速生成（Edge Runtime）...");
-        setGenerationProgress(20);
-
-        try {
-          generatedImageUrls = await generateImageWithReference({
-            prompt: '生成专属IP形象',
-            imageFile: uploadedImage,
-            style: selectedStyle as 'cute' | 'toy' | 'cyber',
-            customRequirements: customInput || undefined,
-          });
-          
-          console.log('Edge Runtime生成成功！');
-
-        } catch (syncError: any) {
-          console.log('Edge Runtime生成失败，回退到前端异步模式:', syncError.message);
-          
-          if (syncError.message.includes('超时') || syncError.message.includes('timeout')) {
-            setGenerationStage("🔄 检测到超时，自动切换到前端异步模式...");
-            setGenerationProgress(15);
-            
-            // 短暂延迟让用户看到切换提示
-            await new Promise(resolve => setTimeout(resolve, 1000));
-            
-            generatedImageUrls = await generateImageWithClientAsync({
-              prompt: '生成专属IP形象',
-              imageFile: uploadedImage,
-              style: selectedStyle as 'cute' | 'toy' | 'cyber',
-              customRequirements: customInput || undefined,
-            }, (status) => {
-              setGenerationProgress(Math.max(15, status.progress));
-              setGenerationStage(`🔄 前端异步模式 - ${status.message}`);
-            });
-            
-          } else {
-            throw syncError; // 非超时错误直接抛出
-          }
-        }
-      }
-      
-      console.log(`生成完成，获得${generatedImageUrls.length}张图片:`, generatedImageUrls);
-      
-      // 更新进度
-      setGenerationProgress(80);
-      setGenerationStage("🎨 准备展示生成结果...");
-      
       // 构建结果数组
       let results: Array<{ id: string; url: string; style: string }> = [];
       
@@ -250,11 +220,9 @@ export default function HomePage() {
       let errorMessage = '未知错误';
       if (error instanceof Error) {
         if (error.message.includes('超时')) {
-          errorMessage = '图片生成超时，建议选择前端异步模式重试';
+          errorMessage = '图片生成超时，请检查网络连接后重试';
         } else if (error.message.includes('前端异步任务')) {
-          errorMessage = '前端异步任务处理失败，请检查网络连接后重试';
-        } else if (error.message.includes('异步任务')) {
-          errorMessage = '服务器异步任务处理失败，请尝试前端异步模式';
+          errorMessage = '图片生成失败，请检查网络连接后重试';
         } else {
           errorMessage = error.message;
         }
@@ -262,7 +230,7 @@ export default function HomePage() {
       
       alert(`生成失败: ${errorMessage}`);
     }
-  }, [uploadedImage, selectedStyle, customInput, generationMode])
+  }, [uploadedImage, selectedStyle, customInput]);
 
   const handleRegenerateAll = useCallback(() => {
     setShowResults(false)
@@ -290,6 +258,22 @@ export default function HomePage() {
             </div>
           </div>
           <div className="flex items-center space-x-3">
+            {/* 存储状态和清理按钮 */}
+            {storageInfo && storageInfo.used > 1024 * 1024 && (
+              <div className="flex items-center space-x-2">
+                <div className="text-xs text-orange-600 bg-orange-100 px-2 py-1 rounded-lg">
+                  存储: {(storageInfo.used / 1024 / 1024).toFixed(1)}MB
+                </div>
+                <button
+                  onClick={clearStorage}
+                  className="bg-red-500 hover:bg-red-600 text-white p-2 rounded-lg transition-colors flex items-center space-x-1"
+                  title="清理存储"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  <span className="text-xs">清理</span>
+                </button>
+              </div>
+            )}
             <button className="text-blue-600 hover:text-pink-500 font-bold text-lg transition-colors">登录</button>
             <button className="bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 hover:from-blue-600 hover:to-pink-600 text-white px-5 py-2 rounded-full font-extrabold text-lg shadow-lg transition-all">免费试用</button>
           </div>
@@ -305,7 +289,7 @@ export default function HomePage() {
           {/* 左侧：上传 & 选项 */}
           <div className={`bg-white/90 backdrop-blur-2xl rounded-3xl shadow-2xl border-4 border-blue-100 p-6 flex flex-col justify-between transition-all duration-500 hover:shadow-blue-200/60 ${
             showResults 
-              ? 'lg:w-[30%] lg:min-w-[320px] min-h-[400px]' 
+              ? 'lg:w-[30%] lg:min-w-[320px] min-h-[400px] max-h-[85vh] overflow-y-auto' 
               : 'flex-1 p-10 min-h-[520px]'
           } h-full`}>
             <div>
@@ -322,11 +306,11 @@ export default function HomePage() {
               )}
               
               {/* 图片上传 */}
-              <div className="mb-6">
+              <div className={showResults ? "mb-4" : "mb-6"}>
                 <label className="block text-base font-semibold text-slate-700 mb-2">上传头像</label>
                 <div
                   className={`border-2 border-dashed rounded-2xl transition-all duration-300 bg-white/60 hover:bg-blue-50/60 shadow-inner ${
-                    showResults ? 'p-4' : 'p-6'
+                    showResults ? 'p-3' : 'p-6'
                   } ${isDragging ? "border-blue-500 bg-blue-50/80" : "border-slate-300 hover:border-blue-400"}`}
                   onDragOver={handleDragOver}
                   onDragLeave={handleDragLeave}
@@ -338,7 +322,7 @@ export default function HomePage() {
                         src={URL.createObjectURL(uploadedImage)}
                         alt="上传的头像"
                         className={`object-contain rounded-xl shadow-lg ring-2 ring-blue-200/30 group-hover:scale-105 transition-transform duration-300 bg-white ${
-                          showResults ? 'max-h-32 max-w-full' : 'max-h-64 max-w-full'
+                          showResults ? 'max-h-24 max-w-full' : 'max-h-64 max-w-full'
                         }`}
                         onError={(e) => {
                           console.error('图片加载失败');
@@ -357,7 +341,7 @@ export default function HomePage() {
                     </div>
                   ) :
                     <label className="block cursor-pointer">
-                      <div className={`text-center ${showResults ? 'py-4' : 'py-8'}`}>
+                      <div className={`text-center ${showResults ? 'py-3' : 'py-8'}`}>
                         <Upload className={`text-blue-400 mx-auto mb-3 drop-shadow ${showResults ? 'w-8 h-8' : 'w-12 h-12'}`} />
                         <p className="text-slate-700 font-semibold mb-1">上传您的头像</p>
                         {!showResults && (
@@ -379,21 +363,21 @@ export default function HomePage() {
               </div>
               
               {/* 风格选择 - 精简版 */}
-              <div className="mb-6">
+              <div className={showResults ? "mb-4" : "mb-6"}>
                 <label className={`block font-extrabold mb-4 bg-gradient-to-r from-pink-500 via-blue-500 to-purple-500 bg-clip-text text-transparent flex items-center gap-2 ${
                   showResults ? 'text-lg' : 'text-2xl'
                 }`}>
                   <span role="img" aria-label="风格">🎨</span> 选择风格
                 </label>
                 <div className={`flex gap-3 overflow-x-auto pb-2 hide-scrollbar ${
-                  showResults ? 'flex-col min-h-[200px]' : 'min-h-[340px]'
+                  showResults ? 'flex-col min-h-[120px]' : 'min-h-[340px]'
                 }`}>
                   {styleOptions.map((style) => (
                     <div
                       key={style.id}
                       className={`border-4 rounded-3xl cursor-pointer transition-all shadow-xl flex items-center backdrop-blur-2xl hover:scale-105 hover:shadow-2xl hover:border-blue-400/80 active:scale-100 group relative ${
                         showResults 
-                          ? 'min-w-full p-4 h-16 bg-gradient-to-r from-white/80 to-white/60' 
+                          ? 'min-w-full p-3 h-14 bg-gradient-to-r from-white/80 to-white/60' 
                           : `min-w-[220px] max-w-xs flex-1 px-7 py-8 flex-col justify-between min-h-[320px] h-full bg-gradient-to-br ${
                               style.id === 'cute' ? 'from-pink-200/80 via-pink-100/60 to-purple-100/60' : 
                               style.id === 'toy' ? 'from-yellow-100/80 via-orange-100/60 to-red-100/60' : 
@@ -445,8 +429,8 @@ export default function HomePage() {
                 </div>
               </div>
               
-              {/* 自定义输入 */}
-              <div className="mb-6">
+              {/* 自定义输入 - 优化在showResults时的显示 */}
+              <div className={showResults ? "mb-4" : "mb-6"}>
                 <label className="block text-base font-semibold text-slate-700 mb-2">
                   自定义需求 <span className="text-slate-400">(可选)</span>
                 </label>
@@ -463,95 +447,21 @@ export default function HomePage() {
                 </div>
               </div>
 
-              {/* 生成模式选择 */}
+              {/* 智能生成按钮 - 移除模式选择 */}
               {!showResults && (
                 <div className="mb-6">
-                  <label className="block text-base font-semibold text-slate-700 mb-3">
-                    🚀 生成模式
-                  </label>
-                  <div className="grid grid-cols-1 gap-3">
-                    <div
-                      className={`border-2 rounded-xl p-3 cursor-pointer transition-all ${
-                        generationMode === 'client-async' 
-                          ? 'border-green-500 bg-green-50 ring-2 ring-green-200' 
-                          : 'border-slate-200 bg-white/60 hover:border-green-300'
-                      }`}
-                      onClick={() => setGenerationMode('client-async')}
-                    >
-                      <div className="flex items-center space-x-3">
-                        <div className={`w-4 h-4 rounded-full border-2 ${
-                          generationMode === 'client-async' ? 'border-green-500 bg-green-500' : 'border-slate-300'
-                        }`}>
-                          {generationMode === 'client-async' && <div className="w-full h-full rounded-full bg-white scale-50"></div>}
-                        </div>
-                        <div className="flex-1">
-                          <div className="font-bold text-slate-800">🌐 前端异步模式 <span className="text-green-600 text-sm">（强烈推荐）</span></div>
-                          <div className="text-sm text-slate-600">浏览器本地缓存，无时间限制，3张独立图片，100%稳定</div>
-                        </div>
+                  <div className="bg-gradient-to-r from-blue-50 to-purple-50 border-2 border-blue-200 rounded-xl p-4">
+                    <div className="flex items-center space-x-3 mb-2">
+                      <div className="w-8 h-8 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full flex items-center justify-center">
+                        <Sparkles className="w-4 h-4 text-white" />
+                      </div>
+                      <div className="flex-1">
+                        <div className="font-bold text-slate-800">🚀 智能生成模式</div>
+                        <div className="text-sm text-slate-600">并行生成3张独特图片，40-60秒完成，实时进度反馈</div>
                       </div>
                     </div>
-                    
-                    <div
-                      className={`border-2 rounded-xl p-3 cursor-pointer transition-all ${
-                        generationMode === 'sync' 
-                          ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-200' 
-                          : 'border-slate-200 bg-white/60 hover:border-blue-300'
-                      }`}
-                      onClick={() => setGenerationMode('sync')}
-                    >
-                      <div className="flex items-center space-x-3">
-                        <div className={`w-4 h-4 rounded-full border-2 ${
-                          generationMode === 'sync' ? 'border-blue-500 bg-blue-500' : 'border-slate-300'
-                        }`}>
-                          {generationMode === 'sync' && <div className="w-full h-full rounded-full bg-white scale-50"></div>}
-                        </div>
-                        <div className="flex-1">
-                          <div className="font-bold text-slate-800">⚡ Edge Runtime模式</div>
-                          <div className="text-sm text-slate-600">稳定快速，20秒内完成，高质量1024x1024图片</div>
-                        </div>
-                      </div>
-                    </div>
-                    
-                    <div
-                      className={`border-2 rounded-xl p-3 cursor-pointer transition-all ${
-                        generationMode === 'auto' 
-                          ? 'border-purple-500 bg-purple-50' 
-                          : 'border-slate-200 bg-white/60 hover:border-purple-300'
-                      }`}
-                      onClick={() => setGenerationMode('auto')}
-                    >
-                      <div className="flex items-center space-x-3">
-                        <div className={`w-4 h-4 rounded-full border-2 ${
-                          generationMode === 'auto' ? 'border-purple-500 bg-purple-500' : 'border-slate-300'
-                        }`}>
-                          {generationMode === 'auto' && <div className="w-full h-full rounded-full bg-white scale-50"></div>}
-                        </div>
-                        <div className="flex-1">
-                          <div className="font-semibold text-slate-800">🤖 智能模式</div>
-                          <div className="text-sm text-slate-600">先尝试快速生成，超时自动切换前端异步模式</div>
-                        </div>
-                      </div>
-                    </div>
-                    
-                    <div
-                      className={`border-2 rounded-xl p-3 cursor-pointer transition-all opacity-75 ${
-                        generationMode === 'async' 
-                          ? 'border-orange-300 bg-orange-50' 
-                          : 'border-slate-200 bg-white/60 hover:border-orange-300'
-                      }`}
-                      onClick={() => setGenerationMode('async')}
-                    >
-                      <div className="flex items-center space-x-3">
-                        <div className={`w-4 h-4 rounded-full border-2 ${
-                          generationMode === 'async' ? 'border-orange-400 bg-orange-400' : 'border-slate-300'
-                        }`}>
-                          {generationMode === 'async' && <div className="w-full h-full rounded-full bg-white scale-50"></div>}
-                        </div>
-                        <div className="flex-1">
-                          <div className="font-semibold text-slate-800">🏗️ 服务器异步模式 <span className="text-orange-500 text-xs">（需Vercel KV）</span></div>
-                          <div className="text-sm text-slate-600">服务器端任务队列，可能遇到任务丢失问题</div>
-                        </div>
-                      </div>
+                    <div className="text-xs text-blue-600 bg-blue-100 rounded-lg px-3 py-1 inline-block">
+                      ✅ 最快速度 ✅ 最高成功率 ✅ 实时反馈
                     </div>
                   </div>
                 </div>
@@ -675,12 +585,14 @@ export default function HomePage() {
                                 showResults ? 'aspect-square' : 'h-32'
                               }`}
                               onError={(e) => {
-                                console.error('生成图片加载失败:', {
+                                const errorInfo = {
                                   url: image.url,
                                   isBase64: image.url.startsWith('data:'),
                                   urlLength: image.url.length,
-                                  domain: image.url.startsWith('http') ? new URL(image.url).hostname : 'unknown'
-                                });
+                                  domain: image.url.startsWith('http') ? new URL(image.url).hostname : 'unknown',
+                                  error: e.type || 'load error'
+                                };
+                                console.error('生成图片加载失败:', errorInfo);
                                 setImageLoadStates(prev => ({ ...prev, [image.id]: 'error' }));
                                 // 尝试添加时间戳强制刷新
                                 const currentSrc = e.currentTarget.src;

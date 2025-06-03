@@ -1,219 +1,205 @@
 import { NextRequest } from 'next/server';
 
-// 移除Edge Runtime限制，使用默认Node.js运行时以获得更好的稳定性
-// export const runtime = 'edge';
+// 🚀 不使用Edge Runtime，允许更长的执行时间
+// export const runtime = 'edge'; // 注释掉以使用Node.js Runtime
 
 export async function POST(req: NextRequest) {
   try {
     console.log('=== Node.js Runtime 图片生成API处理 ===');
     
-    // 1. 解析请求参数
-    const requestFormData = await req.formData();
-    const prompt = requestFormData.get('prompt') as string;
-    const imageFile = requestFormData.get('image') as File;
+    // 处理FormData请求
+    const formData = await req.formData();
+    const prompt = formData.get('prompt') as string;
+    const imageFile = formData.get('image') as File;
+    const style = formData.get('style') as string;
 
     if (!prompt || !imageFile) {
-      return new Response(JSON.stringify({ 
+      return Response.json({ 
         error: '缺少必要参数：prompt或image' 
-      }), { 
-        status: 400,
-        headers: { 'Content-Type': 'application/json' }
-      });
+      }, { status: 400 });
     }
 
     console.log('开始生成图片，提示词长度:', prompt.length);
     console.log('上传文件信息:', imageFile.name, imageFile.size, 'bytes');
 
-    // API配置
+    // 将文件转换为Buffer
+    const arrayBuffer = await imageFile.arrayBuffer();
+    const imageBuffer = Buffer.from(arrayBuffer);
+    console.log('文件转换成功，缓冲区大小:', imageBuffer.length, 'bytes');
+
+    // 🚀 调用麻雀API生成3张图片 - 只使用真实API，不使用演示模式
     const apiUrl = 'https://ismaque.org/v1/images/edits';
-    const apiKey = process.env.SPARROW_API_KEY || 'sk-1eEdZF3JuFocE3eyrFBnmE1IgMFwbGcwPfMciRMdxF1Zl8Ke';
+    const apiKey = process.env.MAQUE_API_KEY || 'sk-5D59F8';
     
-    // 处理提示词
-    let finalPrompt = prompt.replace('[REF_IMAGE]', 'the uploaded reference image');
-    finalPrompt += `. CRITICAL: Generate a character based on the uploaded reference image. Maintain the SAME SUBJECT TYPE (if it's an animal, generate an animal; if it's a person, generate a person). Preserve the key characteristics while applying the artistic style.`;
-    
-    // 准备图片数据 - 更好的文件处理
-    let imageBuffer: Buffer;
-    try {
-      const arrayBuffer = await imageFile.arrayBuffer();
-      imageBuffer = Buffer.from(arrayBuffer);
-      console.log('文件转换成功，缓冲区大小:', imageBuffer.length, 'bytes');
-    } catch (fileError) {
-      console.error('文件处理失败:', fileError);
-      return new Response(JSON.stringify({
-        error: '图片文件处理失败',
-        details: '无法读取上传的图片文件'
-      }), {
-        status: 400,
-        headers: { 'Content-Type': 'application/json' }
-      });
-    }
-    
-    // 生成3张高质量图片（Node.js Runtime支持更长时间）
-    const results: string[] = [];
-    const maxRetries = 2;
+    const generatedUrls: string[] = [];
     const totalImages = 3;
-    let globalLastError: Error | null = null; // 全局错误记录
-    
+    let successCount = 0;
+    let failedCount = 0;
+
+    // 生成3张图片
     for (let i = 0; i < totalImages; i++) {
       console.log(`🖼️ 生成第${i + 1}张图片...`);
       
-      let success = false;
-      let lastError: Error | null = null;
+      const maxRetries = 1; // 减少重试次数，提高速度
+      let imageGenerated = false;
       
-      for (let retry = 0; retry <= maxRetries && !success; retry++) {
-        let timeoutId: NodeJS.Timeout | undefined;
-        
+      for (let retry = 0; retry <= maxRetries && !imageGenerated; retry++) {
         try {
           console.log(`🌐 第${i + 1}张图片，尝试第${retry + 1}次...`);
           
-          // 为每张图片添加独特变化
-          const variationPrompt = finalPrompt + ` Variation seed: ${i}_${retry}`;
-          
+          // 构建请求
           const apiFormData = new FormData();
-          apiFormData.append('image', new Blob([imageBuffer], { type: imageFile.type }), imageFile.name);
-          apiFormData.append('mask', new Blob([imageBuffer], { type: imageFile.type }), imageFile.name);
-          apiFormData.append('prompt', variationPrompt);
-          apiFormData.append('n', '1'); // 单张图片
-          apiFormData.append('size', '1024x1024'); // 高质量
-          apiFormData.append('response_format', 'url');
+          
+          // 添加原始图片
+          const imageBlob = new Blob([imageBuffer], { type: imageFile.type });
+          apiFormData.append('image', imageBlob, imageFile.name || 'image.png');
+          
+          // 使用原图作为遮罩
+          apiFormData.append('mask', imageBlob, 'mask.png');
+          
+          // 添加变化种子确保每张图片不同
+          const variationSeed = `${i}_${retry}_${Date.now()}`;
+          const variationPrompts = [
+            'with slight pose variation and unique background elements',
+            'with different lighting mood and alternative angle perspective',
+            'with varied color saturation and distinct artistic interpretation'
+          ];
+          const selectedVariation = variationPrompts[i % variationPrompts.length];
+          
+          // 构建最终提示词
+          const finalPrompt = `${prompt} ${selectedVariation}`;
+          apiFormData.append('prompt', finalPrompt);
+          
+          // 必需参数 - 明确指定 gpt-image-1 模型
           apiFormData.append('model', 'gpt-image-1');
-
-          // 增加超时控制和重试机制
+          apiFormData.append('n', '1');
+          apiFormData.append('size', '512x512');
+          apiFormData.append('response_format', 'url');
+          apiFormData.append('user', `main_${variationSeed}`);
+          
+          console.log('使用模型: gpt-image-1');
+          
+          // 设置超时控制 - 45秒
           const controller = new AbortController();
-          timeoutId = setTimeout(() => {
+          const timeoutId = setTimeout(() => {
+            console.log('⏰ API调用超时');
             controller.abort();
-            console.error('⏰ API调用超时');
-          }, 45000); // 45秒超时
+          }, 45000);
           
           const response = await fetch(apiUrl, {
             method: 'POST',
             headers: {
               'Authorization': `Bearer ${apiKey}`,
               'User-Agent': 'IP-Creator/1.0',
+              'Accept': 'application/json'
             },
             body: apiFormData,
             signal: controller.signal
           });
-
-          if (timeoutId) {
-            clearTimeout(timeoutId);
-          }
-
+          
+          clearTimeout(timeoutId);
+          
+          console.log(`第${i + 1}张图片API响应状态:`, response.status);
+          
           if (!response.ok) {
-            const errorText = await response.text().catch(() => '无法读取错误响应');
-            console.error(`❌ 第${i + 1}张图片API调用失败:`, response.status, errorText);
-            throw new Error(`API调用失败: HTTP ${response.status} - ${errorText.substring(0, 200)}`);
+            const errorText = await response.text();
+            console.error(`第${i + 1}张图片API错误:`, errorText);
+            
+            let errorData;
+            try {
+              errorData = JSON.parse(errorText);
+            } catch {
+              errorData = { error: { message: errorText } };
+            }
+            
+            // 直接抛出错误，不使用演示模式
+            if (response.status === 401) {
+              throw new Error(`API认证失败: ${errorData.error?.message || 'Invalid API Key'} - 请检查MAQUE_API_KEY环境变量`);
+            } else if (response.status === 404) {
+              throw new Error(`API端点不存在: ${apiUrl} - 请确认麻雀API地址是否正确`);
+            } else {
+              throw new Error(`API错误 (${response.status}): ${errorData.error?.message || errorText}`);
+            }
           }
-
-          const data = await response.json();
-          console.log(`✅ 第${i + 1}张图片API响应成功:`, Object.keys(data));
-
-          // 提取图片URL
+          
+          const result = await response.json();
+          
+          // 解析响应获取图片URL
           let imageUrl = '';
-          if (data.data && Array.isArray(data.data) && data.data[0]?.url) {
-            imageUrl = data.data[0].url;
-          } else if (data.url) {
-            imageUrl = data.url;
-          } else if (data.data && Array.isArray(data.data) && data.data[0]?.b64_json) {
-            imageUrl = `data:image/png;base64,${data.data[0].b64_json}`;
+          if (result.data && result.data[0]) {
+            imageUrl = result.data[0].url || result.data[0].b64_json || '';
+          } else if (result.url) {
+            imageUrl = result.url;
+          } else if (result.images && result.images[0]) {
+            imageUrl = result.images[0];
           }
-
+          
           if (!imageUrl) {
-            console.error('❌ API响应中未找到图片URL:', data);
-            throw new Error('API响应中未找到有效图片URL');
+            throw new Error(`未找到图片URL: ${JSON.stringify(result)}`);
           }
-
-          console.log(`🎉 第${i + 1}张图片生成成功:`, imageUrl.substring(0, 100) + '...');
-          results.push(imageUrl);
-          success = true;
-
-        } catch (fetchError: unknown) {
-          if (timeoutId) {
-            clearTimeout(timeoutId);
+          
+          // 如果是 base64 格式，转换为 data URL
+          if (!imageUrl.startsWith('data:') && !imageUrl.startsWith('http')) {
+            imageUrl = `data:image/png;base64,${imageUrl}`;
           }
-          lastError = fetchError instanceof Error ? fetchError : new Error(String(fetchError));
-          globalLastError = lastError; // 记录到全局
           
-          console.warn(`⚠️ 第${i + 1}张图片生成失败 (尝试 ${retry + 1}/${maxRetries + 1}):`, lastError.message);
+          generatedUrls.push(imageUrl);
+          imageGenerated = true;
+          successCount++;
+          console.log(`✅ 第${i + 1}张图片生成成功`);
           
-          // 分析错误类型
-          if (lastError.name === 'AbortError') {
+        } catch (error: any) {
+          console.error(`⚠️ 第${i + 1}张图片生成失败 (尝试 ${retry + 1}/${maxRetries + 1}):`, error.message);
+          
+          if (error.name === 'AbortError') {
             console.log('🕐 请求被取消（可能是超时）');
-            break; // 超时不重试
           }
           
-          if (lastError.message.includes('Failed to fetch') || lastError.message.includes('网络')) {
-            console.log('🌐 检测到网络连接问题');
-          }
-          
-          // 如果不是最后一次重试，等待后继续
-          if (retry < maxRetries) {
-            const waitTime = (retry + 1) * 2000; // 递增等待时间：2s, 4s
-            console.log(`⏳ 等待${waitTime}ms后重试...`);
-            await new Promise(resolve => setTimeout(resolve, waitTime));
+          if (retry === maxRetries) {
+            failedCount++;
+            console.error(`❌ 第${i + 1}张图片完全失败:`, error.message);
+            // 第一张图片失败时立即抛出错误
+            if (i === 0) {
+              throw error;
+            }
+          } else {
+            // 等待后重试
+            await new Promise(resolve => setTimeout(resolve, 1000));
           }
         }
       }
-      
-      // 如果这张图片完全失败，记录但继续下一张
-      if (!success) {
-        console.error(`❌ 第${i + 1}张图片完全失败:`, lastError?.message);
-      }
     }
 
-    // 检查最终结果
-    const successCount = results.length;
-    const failedCount = totalImages - successCount;
-    
     console.log(`🎯 图片生成完成: ${successCount}张成功, ${failedCount}张失败`);
 
-    // 至少要有1张成功才算成功
-    if (successCount < 1) {
-      return new Response(JSON.stringify({
-        error: '所有图片生成都失败了',
-        details: globalLastError?.message || '未知错误',
-        suggestion: '请检查网络连接或稍后重试'
-      }), {
-        status: 500,
-        headers: { 'Content-Type': 'application/json' }
-      });
+    // 如果没有成功的图片，直接报错
+    if (generatedUrls.length === 0) {
+      throw new Error('所有图片生成均失败，请检查API配置和网络连接');
     }
 
-    // 如果只有部分成功，用成功的图片填充到3张
-    const finalResults = [...results];
-    while (finalResults.length < 3 && results.length > 0) {
-      finalResults.push(results[0]); // 复制第一张成功的图片
+    // 如果部分失败，用成功的图片填充
+    while (generatedUrls.length < 3) {
+      generatedUrls.push(generatedUrls[0]);
     }
 
-    // 返回结果
-    return new Response(JSON.stringify({
+    return Response.json({
       success: true,
-      urls: finalResults,
-      message: `Node.js Runtime图片生成完成 - ${successCount}张原创图片` + (failedCount > 0 ? `，${failedCount}张失败` : ''),
+      images: generatedUrls.slice(0, 3),
+      message: `成功生成${successCount}张图片${failedCount > 0 ? `，${failedCount}张失败` : ''}`,
+      style: style,
+      count: 3,
+      mode: 'api',
       model: 'gpt-image-1',
-      size: '1024x1024',
-      runtime: 'nodejs',
-      stats: {
-        successful: successCount,
-        failed: failedCount,
-        total: totalImages
-      }
-    }), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' }
+      runtime: 'nodejs'
     });
 
   } catch (error) {
-    console.error('🚨 图片生成过程出现严重错误:', error);
-    return new Response(JSON.stringify({ 
+    console.error('图片生成失败:', error);
+    return Response.json({ 
       error: '图片生成失败',
       details: error instanceof Error ? error.message : String(error),
       runtime: 'nodejs',
-      suggestion: '请检查网络连接、API配置或稍后重试'
-    }), { 
-      status: 500,
-      headers: { 'Content-Type': 'application/json' }
-    });
+      model: 'gpt-image-1'
+    }, { status: 500 });
   }
 } 
