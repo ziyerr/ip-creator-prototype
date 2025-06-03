@@ -51,7 +51,7 @@ export async function GET() {
 // 清理所有任务（调试用）
 export async function DELETE() {
   try {
-    const allTasks = TaskManager.getAllTasks();
+    const allTasks = await TaskManager.getAllTasks();
     const taskCount = allTasks.length;
     
     // 这里我们需要添加一个清理方法到TaskManager

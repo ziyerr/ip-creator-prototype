@@ -50,9 +50,10 @@ function cleanupExpiredTasks(storage: Map<string, ImageTask>) {
 // GET - 查询特定任务状态
 export async function GET(
   req: NextRequest,
-  { params }: { params: { taskId: string } }
+  context: { params: Promise<{ taskId: string }> }
 ) {
   try {
+    const params = await context.params;
     const { taskId } = params;
 
     if (!taskId) {
@@ -116,9 +117,10 @@ export async function GET(
 // DELETE - 删除任务
 export async function DELETE(
   req: NextRequest,
-  { params }: { params: { taskId: string } }
+  context: { params: Promise<{ taskId: string }> }
 ) {
   try {
+    const params = await context.params;
     const { taskId } = params;
 
     if (!taskId) {

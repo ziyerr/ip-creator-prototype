@@ -116,15 +116,15 @@ export async function POST(req: NextRequest) {
       );
     }
     
-    const results = taskIds.map(taskId => {
-      const task = TaskManager.getTask(taskId);
+    const results = await Promise.all(taskIds.map(async taskId => {
+      const task = await TaskManager.getTask(taskId);
       if (!task) {
         return {
           taskId,
           error: '任务不存在或已过期'
         };
       }
-      
+
       return {
         taskId: task.id,
         status: task.status,
@@ -137,7 +137,7 @@ export async function POST(req: NextRequest) {
           error: task.error
         })
       };
-    });
+    }));
     
     return NextResponse.json({
       success: true,

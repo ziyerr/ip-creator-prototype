@@ -75,7 +75,7 @@ export async function POST(req: NextRequest) {
       apiFormData.append('prompt', prompt);
       apiFormData.append('n', '3');
       apiFormData.append('size', '1024x1024');
-      apiFormData.append('response_format', 'url');
+      apiFormData.append('response_format', 'b64_json'); // 使用base64格式
       apiFormData.append('model', 'gpt-image-1');
 
       requestBody = apiFormData;
@@ -89,7 +89,7 @@ export async function POST(req: NextRequest) {
         prompt: prompt,
         n: 3,
         size: '1024x1024',
-        response_format: 'url',
+        response_format: 'b64_json', // 使用base64格式
         model: 'gpt-image-1'
       };
 
@@ -119,11 +119,21 @@ export async function POST(req: NextRequest) {
     const result = await response.json();
     console.log('✅ 麻雀API响应成功:', result);
 
-    // 提取图片URL
-    const imageUrls = result.data?.map((item: any) => item.url) || [];
+    // 提取图片数据并转换为data URL
+    const imageUrls = result.data?.map((item: any, index: number) => {
+      if (item.b64_json) {
+        // 将base64数据转换为data URL
+        return `data:image/png;base64,${item.b64_json}`;
+      } else if (item.url) {
+        // 如果是URL格式，直接使用
+        return item.url;
+      } else {
+        throw new Error(`图片数据格式错误: ${JSON.stringify(item).substring(0, 100)}...`);
+      }
+    }) || [];
 
     if (imageUrls.length === 0) {
-      throw new Error('API返回的数据中没有图片URL');
+      throw new Error('API返回的数据中没有图片数据');
     }
 
     // 立即返回成功结果
