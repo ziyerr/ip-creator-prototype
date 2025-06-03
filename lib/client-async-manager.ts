@@ -204,178 +204,16 @@ class ClientAsyncManager {
 
       this.updateTaskStatus(taskId, 'processing', 30, `🎨 AI正在并行生成3张专属IP形象...${retryInfo}`);
 
-      // 🌊 流式生成策略：每生成一张立即显示
-      const maxRetries = 2;
-      const totalImages = 3;
+      // 🌊 生成策略选择：并行 vs 串行
+      const USE_PARALLEL_GENERATION = true; // 🔥 设置为true启用同时生成3张图片
       
-      for (let i = 0; i < totalImages; i++) {
-        console.log(`🖼️ 生成第${i + 1}张独立图片 (尝试 1/${maxRetries + 1})...`);
-        
-        const generateSingleImageWithRetry = async (): Promise<string> => {
-          let lastError: Error | null = null;
-
-          for (let retry = 0; retry <= maxRetries; retry++) {
-            try {
-              console.log(`🌐 调用单图片生成API (第${i + 1}张，重试第${retry + 1}次)...`);
-              
-              // 🎲 为每张图片添加独特变化种子
-              const variationSeed = i.toString();
-              
-              // 构建请求
-              const formData = new FormData();
-              
-              // 🔧 从base64重新构造File对象，增强错误处理
-              let imageFile: File;
-              try {
-                imageFile = this.base64ToFile(task.imageFileData, task.imageFileName, task.imageFileType);
-                
-                // 验证File对象
-                if (!imageFile || imageFile.size === 0) {
-                  throw new Error('重构的File对象无效或为空');
-                }
-                
-                console.log(`✅ File对象重构成功: ${imageFile.name}, 大小: ${imageFile.size} bytes, 类型: ${imageFile.type}`);
-                
-              } catch (fileError) {
-                console.error('File对象重构失败:', fileError);
-                throw new Error(`图片文件处理失败: ${fileError instanceof Error ? fileError.message : String(fileError)}`);
-              }
-              
-              formData.append('prompt', finalPrompt);
-              formData.append('image', imageFile);
-              formData.append('variationSeed', variationSeed);
-
-              // 🚨 增强错误处理和超时控制
-              const controller = new AbortController();
-              const timeoutId = setTimeout(() => {
-                controller.abort();
-                console.error('❌ API请求超时');
-              }, 90000); // 90秒超时
-
-              const response = await fetch('/api/generate-single-image', {
-                method: 'POST',
-                body: formData,
-                signal: controller.signal,
-                // 添加更多headers帮助调试
-                headers: {
-                  'Accept': 'application/json',
-                }
-              }).finally(() => {
-                clearTimeout(timeoutId);
-              });
-
-              if (!response.ok) {
-                let errorDetails = '';
-                try {
-                  const errorData = await response.json();
-                  errorDetails = errorData.details || errorData.error || errorData.message || '';
-                } catch {
-                  errorDetails = await response.text().catch(() => '无法解析错误响应');
-                }
-                
-                console.error(`❌ API响应错误 ${response.status}:`, errorDetails);
-                throw new Error(`第${i + 1}张图片API调用失败: HTTP ${response.status} - ${errorDetails}`);
-              }
-
-              const data = await response.json();
-              
-              if (!data.success || !data.url) {
-                console.error(`❌ 第${i + 1}张图片API响应格式错误:`, data);
-                throw new Error(`第${i + 1}张图片API响应无效 - 缺少成功标志或URL`);
-              }
-
-              const imageUrl = data.url;
-              const variationInfo = data.variation || '独特变化';
-              console.log(`✅ 第${i + 1}张独立图片生成成功 (${variationInfo}):`, imageUrl.substring(0, 100) + '...');
-              
-              return imageUrl;
-              
-            } catch (error) {
-              lastError = error instanceof Error ? error : new Error(String(error));
-              console.warn(`⚠️ 第${i + 1}张图片生成失败 (尝试 ${retry + 1}/${maxRetries + 1}):`, lastError.message);
-              
-              // 增强错误分类和处理
-              if (lastError.name === 'AbortError') {
-                console.log('🕐 请求被取消（可能是超时）');
-                break; // 超时不重试
-              }
-              
-              if (lastError.message.includes('Failed to fetch') || lastError.message.includes('网络')) {
-                console.log('🌐 检测到网络连接问题');
-              }
-              
-              // 如果不是最后一次重试，等待后继续
-              if (retry < maxRetries) {
-                const waitTime = (retry + 1) * 2000; // 递增等待时间：2s, 4s
-                console.log(`⏳ 等待${waitTime}ms后重试...`);
-                await new Promise(resolve => setTimeout(resolve, waitTime));
-              }
-            }
-          }
-          
-          // 所有重试都失败了
-          throw lastError || new Error(`第${i + 1}张图片生成完全失败 - 已尝试${maxRetries + 1}次`);
-        };
-
-        try {
-          // 🌊 生成单张图片
-          const imageUrl = await generateSingleImageWithRetry();
-          
-          // 🚀 立即更新到任务结果中！用户马上就能看到这张图片
-          const currentTask = this.getTaskStatus(taskId);
-          if (currentTask) {
-            currentTask.results.push(imageUrl);
-            
-            // 计算进度：每张图片完成后更新进度
-            const completedImages = currentTask.results.length;
-            const progress = 30 + Math.floor((completedImages / totalImages) * 60); // 30% + 60%分配给3张图片
-            
-            const progressMessage = retryInfo 
-              ? `✨ 已完成第${completedImages}张图片${retryInfo}，继续生成中... (${completedImages}/${totalImages})`
-              : `✨ 已完成第${completedImages}张图片，继续生成中... (${completedImages}/${totalImages})`;
-            
-            this.updateTaskStatus(taskId, 'processing', progress, progressMessage);
-            
-            // 🔄 保存到localStorage，让轮询立即能获取到新图片
-            this.saveTask(currentTask);
-            
-            console.log(`🎉 第${i + 1}张图片已添加到结果中，当前进度: ${progress}%`);
-          }
-          
-        } catch (error) {
-          console.error(`❌ 第${i + 1}张图片生成最终失败:`, error);
-          // 记录具体的失败原因但不中止整体任务
-          const errorMessage = error instanceof Error ? error.message : String(error);
-          console.log(`📝 失败详情: ${errorMessage}`);
-          // 单张图片失败不影响其他图片继续生成
-          continue;
-        }
+      if (USE_PARALLEL_GENERATION) {
+        console.log('🚀 启用并行模式：同时生成3张图片...');
+        await this.generateImagesInParallel(taskId, task, finalPrompt, retryInfo, 2, 3);
+      } else {
+        console.log('🌊 启用串行模式：一张一张生成图片...');
+        await this.generateImagesInSequence(taskId, task, finalPrompt, retryInfo, 2, 3);
       }
-
-      // 检查最终结果
-      const finalTask = this.getTaskStatus(taskId);
-      if (!finalTask) {
-        throw new Error('任务状态丢失 - localStorage可能被清理');
-      }
-      
-      const successCount = finalTask.results.length;
-      const failedCount = totalImages - successCount;
-      
-      this.updateTaskStatus(taskId, 'processing', 90, `✨ 正在验证生成结果...${retryInfo}`);
-
-      // 🚨 严格验证：必须至少有1张成功（降低要求以提高容错性）
-      if (successCount < 1) {
-        throw new Error(`生成完全失败：没有成功生成任何图片。请检查网络连接、API配置或稍后重试`);
-      }
-
-      // 🎉 任务完成
-      const completionMessage = successCount >= 2
-        ? `🎉 成功生成${successCount}张真实独立图片！${retryInfo ? ` (第${task.retryCount}次重试成功)` : ''}` 
-        : `🎯 部分成功！生成了${successCount}张图片${failedCount > 0 ? `，${failedCount}张失败` : ''}${retryInfo ? ` (第${task.retryCount}次重试)` : ''}`;
-
-      this.updateTaskStatus(taskId, 'completed', 100, completionMessage);
-      
-      console.log(`✅ 前端异步任务 ${taskId} 完成: ${successCount}张成功, ${failedCount}张失败${retryInfo}`);
 
     } catch (error) {
       console.error(`❌ 前端异步任务 ${taskId} 处理失败:`, error);
@@ -519,7 +357,7 @@ class ClientAsyncManager {
   // 清理所有任务
   clearAllTasks(): void {
     localStorage.removeItem(this.STORAGE_KEY);
-    console.log('��️ 已清理所有本地任务');
+    console.log('已清理所有本地任务');
   }
 
   // 🔄 启动5秒间隔轮询监听机制
@@ -599,6 +437,343 @@ class ClientAsyncManager {
     
     // 立即开始第一次轮询
     setTimeout(pollTask, 1000); // 1秒后开始轮询
+  }
+
+  // 🚀 并行生成策略：同时生成3张图片
+  private async generateImagesInParallel(taskId: string, task: ClientTask, finalPrompt: string, retryInfo: string, maxRetries: number, totalImages: number): Promise<void> {
+    console.log(`🚀 开始并行生成${totalImages}张图片...`);
+    
+    // 更新状态
+    this.updateTaskStatus(taskId, 'processing', 40, `🚀 同时启动${totalImages}张图片生成...${retryInfo}`);
+    
+    // 创建3个并行的生成任务
+    const generateSingleImage = async (imageIndex: number): Promise<{ index: number; url: string | null; error: string | null }> => {
+      console.log(`🖼️ 启动第${imageIndex + 1}张图片生成任务...`);
+      
+      let lastError: Error | null = null;
+      
+      for (let retry = 0; retry <= maxRetries; retry++) {
+        try {
+          console.log(`🌐 第${imageIndex + 1}张图片API调用 (尝试 ${retry + 1}/${maxRetries + 1})...`);
+          
+          // 🎲 为每张图片添加独特变化种子
+          const variationSeed = `${imageIndex}_${retry}_${Date.now()}`;
+          
+          // 构建请求
+          const formData = new FormData();
+          
+          // 🔧 从base64重新构造File对象
+          let imageFile: File;
+          try {
+            imageFile = this.base64ToFile(task.imageFileData, task.imageFileName, task.imageFileType);
+            
+            if (!imageFile || imageFile.size === 0) {
+              throw new Error('重构的File对象无效或为空');
+            }
+            
+            console.log(`✅ 第${imageIndex + 1}张图片File对象重构成功: ${imageFile.size} bytes`);
+            
+          } catch (fileError) {
+            console.error(`❌ 第${imageIndex + 1}张图片File对象重构失败:`, fileError);
+            throw new Error(`图片文件处理失败: ${fileError instanceof Error ? fileError.message : String(fileError)}`);
+          }
+          
+          formData.append('prompt', finalPrompt);
+          formData.append('image', imageFile);
+          formData.append('variationSeed', variationSeed);
+
+          // 🚨 超时控制
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => {
+            controller.abort();
+            console.error(`❌ 第${imageIndex + 1}张图片API请求超时`);
+          }, 120000); // 120秒超时（并行时给更多时间）
+
+          const response = await fetch('/api/generate-single-image', {
+            method: 'POST',
+            body: formData,
+            signal: controller.signal,
+            headers: {
+              'Accept': 'application/json',
+            }
+          }).finally(() => {
+            clearTimeout(timeoutId);
+          });
+
+          if (!response.ok) {
+            let errorDetails = '';
+            try {
+              const errorData = await response.json();
+              errorDetails = errorData.details || errorData.error || errorData.message || '';
+            } catch {
+              errorDetails = await response.text().catch(() => '无法解析错误响应');
+            }
+            
+            console.error(`❌ 第${imageIndex + 1}张图片API响应错误 ${response.status}:`, errorDetails);
+            throw new Error(`第${imageIndex + 1}张图片API调用失败: HTTP ${response.status} - ${errorDetails}`);
+          }
+
+          const data = await response.json();
+          
+          if (!data.success || !data.url) {
+            console.error(`❌ 第${imageIndex + 1}张图片API响应格式错误:`, data);
+            throw new Error(`第${imageIndex + 1}张图片API响应无效 - 缺少成功标志或URL`);
+          }
+
+          const imageUrl = data.url;
+          const variationInfo = data.variation || '独特变化';
+          console.log(`✅ 第${imageIndex + 1}张图片生成成功 (${variationInfo}):`, imageUrl.substring(0, 100) + '...');
+          
+          return { index: imageIndex, url: imageUrl, error: null };
+          
+        } catch (error) {
+          lastError = error instanceof Error ? error : new Error(String(error));
+          console.warn(`⚠️ 第${imageIndex + 1}张图片生成失败 (尝试 ${retry + 1}/${maxRetries + 1}):`, lastError.message);
+          
+          // 如果不是最后一次重试，等待后继续
+          if (retry < maxRetries) {
+            const waitTime = (retry + 1) * 1000; // 并行时缩短等待时间：1s, 2s
+            console.log(`⏳ 第${imageIndex + 1}张图片等待${waitTime}ms后重试...`);
+            await new Promise(resolve => setTimeout(resolve, waitTime));
+          }
+        }
+      }
+      
+      // 所有重试都失败了
+      const errorMessage = lastError?.message || `第${imageIndex + 1}张图片生成完全失败`;
+      console.error(`❌ 第${imageIndex + 1}张图片最终失败:`, errorMessage);
+      return { index: imageIndex, url: null, error: errorMessage };
+    };
+    
+    // 🚀 同时启动3个生成任务
+    console.log(`🚀 同时启动${totalImages}个并行生成任务...`);
+    
+    const promises = Array.from({ length: totalImages }, (_, i) => generateSingleImage(i));
+    
+    // 🎯 使用Promise.allSettled等待所有任务完成（不管成功失败）
+    const results = await Promise.allSettled(promises);
+    
+    // 🔍 收集成功的结果
+    const successfulImages: string[] = [];
+    const failedImages: string[] = [];
+    
+    results.forEach((result, index) => {
+      if (result.status === 'fulfilled') {
+        const { url, error } = result.value;
+        if (url && !error) {
+          successfulImages.push(url);
+          console.log(`✅ 第${index + 1}张图片收集成功`);
+        } else {
+          failedImages.push(error || '未知错误');
+          console.warn(`⚠️ 第${index + 1}张图片收集失败: ${error}`);
+        }
+      } else {
+        failedImages.push(result.reason?.message || '任务被拒绝');
+        console.error(`❌ 第${index + 1}张图片任务被拒绝:`, result.reason);
+      }
+    });
+    
+    // 🎉 批量更新结果到任务中
+    const currentTask = this.getTaskStatus(taskId);
+    if (currentTask) {
+      currentTask.results = successfulImages; // 批量设置所有成功的图片
+      
+      const successCount = successfulImages.length;
+      const failedCount = failedImages.length;
+      
+      console.log(`📊 并行生成完成: ${successCount}张成功, ${failedCount}张失败`);
+      
+      // 🔄 保存到localStorage
+      this.saveTask(currentTask);
+      
+      // 🎯 验证结果
+      if (successCount < 1) {
+        throw new Error(`并行生成完全失败：没有成功生成任何图片。失败原因: ${failedImages.join('; ')}`);
+      }
+      
+      // 🎉 任务完成
+      const completionMessage = successCount >= 2
+        ? `🎉 并行生成成功！同时完成${successCount}张图片！${retryInfo ? ` (第${task.retryCount}次重试成功)` : ''}` 
+        : `🎯 部分成功！并行生成了${successCount}张图片${failedCount > 0 ? `，${failedCount}张失败` : ''}${retryInfo ? ` (第${task.retryCount}次重试)` : ''}`;
+
+      this.updateTaskStatus(taskId, 'completed', 100, completionMessage);
+      
+      console.log(`✅ 并行生成任务 ${taskId} 完成: ${successCount}张成功, ${failedCount}张失败${retryInfo}`);
+    }
+  }
+
+  // 🌊 串行生成策略：一张一张生成图片（原逻辑）
+  private async generateImagesInSequence(taskId: string, task: ClientTask, finalPrompt: string, retryInfo: string, maxRetries: number, totalImages: number): Promise<void> {
+    console.log(`🌊 开始串行生成${totalImages}张图片...`);
+    
+    for (let i = 0; i < totalImages; i++) {
+      console.log(`🖼️ 生成第${i + 1}张独立图片 (尝试 1/${maxRetries + 1})...`);
+      
+      const generateSingleImageWithRetry = async (): Promise<string> => {
+        let lastError: Error | null = null;
+
+        for (let retry = 0; retry <= maxRetries; retry++) {
+          try {
+            console.log(`🌐 调用单图片生成API (第${i + 1}张，重试第${retry + 1}次)...`);
+            
+            // 🎲 为每张图片添加独特变化种子
+            const variationSeed = i.toString();
+            
+            // 构建请求
+            const formData = new FormData();
+            
+            // 🔧 从base64重新构造File对象，增强错误处理
+            let imageFile: File;
+            try {
+              imageFile = this.base64ToFile(task.imageFileData, task.imageFileName, task.imageFileType);
+              
+              // 验证File对象
+              if (!imageFile || imageFile.size === 0) {
+                throw new Error('重构的File对象无效或为空');
+              }
+              
+              console.log(`✅ File对象重构成功: ${imageFile.name}, 大小: ${imageFile.size} bytes, 类型: ${imageFile.type}`);
+              
+            } catch (fileError) {
+              console.error('File对象重构失败:', fileError);
+              throw new Error(`图片文件处理失败: ${fileError instanceof Error ? fileError.message : String(fileError)}`);
+            }
+            
+            formData.append('prompt', finalPrompt);
+            formData.append('image', imageFile);
+            formData.append('variationSeed', variationSeed);
+
+            // 🚨 增强错误处理和超时控制
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => {
+              controller.abort();
+              console.error('❌ API请求超时');
+            }, 90000); // 90秒超时
+
+            const response = await fetch('/api/generate-single-image', {
+              method: 'POST',
+              body: formData,
+              signal: controller.signal,
+              // 添加更多headers帮助调试
+              headers: {
+                'Accept': 'application/json',
+              }
+            }).finally(() => {
+              clearTimeout(timeoutId);
+            });
+
+            if (!response.ok) {
+              let errorDetails = '';
+              try {
+                const errorData = await response.json();
+                errorDetails = errorData.details || errorData.error || errorData.message || '';
+              } catch {
+                errorDetails = await response.text().catch(() => '无法解析错误响应');
+              }
+              
+              console.error(`❌ API响应错误 ${response.status}:`, errorDetails);
+              throw new Error(`第${i + 1}张图片API调用失败: HTTP ${response.status} - ${errorDetails}`);
+            }
+
+            const data = await response.json();
+            
+            if (!data.success || !data.url) {
+              console.error(`❌ 第${i + 1}张图片API响应格式错误:`, data);
+              throw new Error(`第${i + 1}张图片API响应无效 - 缺少成功标志或URL`);
+            }
+
+            const imageUrl = data.url;
+            const variationInfo = data.variation || '独特变化';
+            console.log(`✅ 第${i + 1}张独立图片生成成功 (${variationInfo}):`, imageUrl.substring(0, 100) + '...');
+            
+            return imageUrl;
+            
+          } catch (error) {
+            lastError = error instanceof Error ? error : new Error(String(error));
+            console.warn(`⚠️ 第${i + 1}张图片生成失败 (尝试 ${retry + 1}/${maxRetries + 1}):`, lastError.message);
+            
+            // 增强错误分类和处理
+            if (lastError.name === 'AbortError') {
+              console.log('🕐 请求被取消（可能是超时）');
+              break; // 超时不重试
+            }
+            
+            if (lastError.message.includes('Failed to fetch') || lastError.message.includes('网络')) {
+              console.log('🌐 检测到网络连接问题');
+            }
+            
+            // 如果不是最后一次重试，等待后继续
+            if (retry < maxRetries) {
+              const waitTime = (retry + 1) * 2000; // 递增等待时间：2s, 4s
+              console.log(`⏳ 等待${waitTime}ms后重试...`);
+              await new Promise(resolve => setTimeout(resolve, waitTime));
+            }
+          }
+        }
+        
+        // 所有重试都失败了
+        throw lastError || new Error(`第${i + 1}张图片生成完全失败 - 已尝试${maxRetries + 1}次`);
+      };
+
+      try {
+        // 🌊 生成单张图片
+        const imageUrl = await generateSingleImageWithRetry();
+        
+        // 🚀 立即更新到任务结果中！用户马上就能看到这张图片
+        const currentTask = this.getTaskStatus(taskId);
+        if (currentTask) {
+          currentTask.results.push(imageUrl);
+          
+          // 计算进度：每张图片完成后更新进度
+          const completedImages = currentTask.results.length;
+          const progress = 30 + Math.floor((completedImages / totalImages) * 60); // 30% + 60%分配给3张图片
+          
+          const progressMessage = retryInfo 
+            ? `✨ 已完成第${completedImages}张图片${retryInfo}，继续生成中... (${completedImages}/${totalImages})`
+            : `✨ 已完成第${completedImages}张图片，继续生成中... (${completedImages}/${totalImages})`;
+          
+          this.updateTaskStatus(taskId, 'processing', progress, progressMessage);
+          
+          // 🔄 保存到localStorage，让轮询立即能获取到新图片
+          this.saveTask(currentTask);
+          
+          console.log(`🎉 第${i + 1}张图片已添加到结果中，当前进度: ${progress}%`);
+        }
+        
+      } catch (error) {
+        console.error(`❌ 第${i + 1}张图片生成最终失败:`, error);
+        // 记录具体的失败原因但不中止整体任务
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        console.log(`📝 失败详情: ${errorMessage}`);
+        // 单张图片失败不影响其他图片继续生成
+        continue;
+      }
+    }
+
+    // 检查最终结果
+    const finalTask = this.getTaskStatus(taskId);
+    if (!finalTask) {
+      throw new Error('任务状态丢失 - localStorage可能被清理');
+    }
+    
+    const successCount = finalTask.results.length;
+    const failedCount = totalImages - successCount;
+    
+    this.updateTaskStatus(taskId, 'processing', 90, `✨ 正在验证生成结果...${retryInfo}`);
+
+    // 🚨 严格验证：必须至少有1张成功（降低要求以提高容错性）
+    if (successCount < 1) {
+      throw new Error(`生成完全失败：没有成功生成任何图片。请检查网络连接、API配置或稍后重试`);
+    }
+
+    // 🎉 任务完成
+    const completionMessage = successCount >= 2
+      ? `🎉 成功生成${successCount}张真实独立图片！${retryInfo ? ` (第${task.retryCount}次重试成功)` : ''}` 
+      : `🎯 部分成功！生成了${successCount}张图片${failedCount > 0 ? `，${failedCount}张失败` : ''}${retryInfo ? ` (第${task.retryCount}次重试)` : ''}`;
+
+    this.updateTaskStatus(taskId, 'completed', 100, completionMessage);
+    
+    console.log(`✅ 前端异步任务 ${taskId} 完成: ${successCount}张成功, ${failedCount}张失败${retryInfo}`);
   }
 }
 
