@@ -225,7 +225,7 @@ async function processImageGenerationTask(taskId: string, prompt: string, imageF
     task.progress = 90;
 
     // 验证结果
-    const validResults = results.filter(url => url && url.length > 0);
+    const validResults = results.filter(url => typeof url === 'string' && !!url);
     if (validResults.length === 0) {
       throw new Error('所有图片生成均失败');
     }
