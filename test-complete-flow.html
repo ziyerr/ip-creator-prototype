@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>完整流程测试</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        .container {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 30px;
+            border-radius: 15px;
+            backdrop-filter: blur(10px);
+        }
+        .status {
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 8px;
+            font-weight: bold;
+        }
+        .success { background: rgba(34, 197, 94, 0.2); border: 2px solid #22c55e; }
+        .warning { background: rgba(251, 191, 36, 0.2); border: 2px solid #fbbf24; }
+        .error { background: rgba(239, 68, 68, 0.2); border: 2px solid #ef4444; }
+        .info { background: rgba(59, 130, 246, 0.2); border: 2px solid #3b82f6; }
+        button {
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: bold;
+            margin: 5px;
+            transition: transform 0.2s;
+        }
+        button:hover {
+            transform: translateY(-2px);
+        }
+        .comparison {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin: 20px 0;
+        }
+        .comparison-item {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 20px;
+            border-radius: 8px;
+        }
+        .comparison-item h3 {
+            margin-top: 0;
+            color: #fbbf24;
+        }
+        .metrics {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 10px;
+            margin: 15px 0;
+        }
+        .metric {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 10px;
+            border-radius: 8px;
+            text-align: center;
+        }
+        .metric-value {
+            font-size: 18px;
+            font-weight: bold;
+            color: #fbbf24;
+        }
+        .metric-label {
+            font-size: 12px;
+            opacity: 0.8;
+        }
+        .test-results {
+            max-height: 300px;
+            overflow-y: auto;
+            background: rgba(0, 0, 0, 0.2);
+            padding: 15px;
+            border-radius: 8px;
+            margin: 15px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔬 完整流程测试：localStorage 优化效果</h1>
+        
+        <div class="comparison">
+            <div class="comparison-item">
+                <h3>🔴 优化前 (Base64存储)</h3>
+                <div class="metrics">
+                    <div class="metric">
+                        <div class="metric-value" id="oldStorage">~5MB</div>
+                        <div class="metric-label">存储大小</div>
+                    </div>
+                    <div class="metric">
+                        <div class="metric-value">❌</div>
+                        <div class="metric-label">配额错误</div>
+                    </div>
+                    <div class="metric">
+                        <div class="metric-value">慢</div>
+                        <div class="metric-label">加载速度</div>
+                    </div>
+                </div>
+                <p>• 每个任务存储完整base64图片数据<br>
+                • 单张图片约1-2MB<br>
+                • 3-5个任务就会超出配额<br>
+                • 频繁出现QuotaExceededError</p>
+            </div>
+            
+            <div class="comparison-item">
+                <h3>🟢 优化后 (文件URL存储)</h3>
+                <div class="metrics">
+                    <div class="metric">
+                        <div class="metric-value" id="newStorage">-</div>
+                        <div class="metric-label">存储大小</div>
+                    </div>
+                    <div class="metric">
+                        <div class="metric-value">✅</div>
+                        <div class="metric-label">无错误</div>
+                    </div>
+                    <div class="metric">
+                        <div class="metric-value">快</div>
+                        <div class="metric-label">加载速度</div>
+                    </div>
+                </div>
+                <p>• 只存储图片文件URL路径<br>
+                • 单个URL约50-100字节<br>
+                • 可存储数千个任务记录<br>
+                • 图片文件保存在服务器</p>
+            </div>
+        </div>
+
+        <div>
+            <button onclick="testCurrentStorage()">📊 测试当前存储</button>
+            <button onclick="simulateOldMethod()">🔴 模拟旧方法</button>
+            <button onclick="simulateNewMethod()">🟢 模拟新方法</button>
+            <button onclick="clearAllTests()">🧹 清理测试</button>
+        </div>
+
+        <div class="test-results" id="testResults"></div>
+    </div>
+
+    <script>
+        function updateStatus(message, type = 'info') {
+            const results = document.getElementById('testResults');
+            const div = document.createElement('div');
+            div.className = `status ${type}`;
+            div.innerHTML = `<strong>${new Date().toLocaleTimeString()}:</strong> ${message}`;
+            results.appendChild(div);
+            results.scrollTop = results.scrollHeight;
+        }
+
+        function formatBytes(bytes) {
+            if (bytes < 1024) return bytes + ' B';
+            if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+            return (bytes / 1024 / 1024).toFixed(2) + ' MB';
+        }
+
+        function testCurrentStorage() {
+            try {
+                const data = localStorage.getItem('ip_creator_tasks');
+                const used = data ? new Blob([data]).size : 0;
+                
+                document.getElementById('newStorage').textContent = formatBytes(used);
+                
+                updateStatus(`📊 当前localStorage使用量: ${formatBytes(used)}`, 'info');
+                
+                if (data) {
+                    const tasks = JSON.parse(data);
+                    const taskCount = Object.keys(tasks).length;
+                    updateStatus(`📋 当前任务数量: ${taskCount}`, 'info');
+                    
+                    // 分析任务数据
+                    let totalImageData = 0;
+                    let lightweightTasks = 0;
+                    
+                    Object.values(tasks).forEach(task => {
+                        if (task.imageFileData) {
+                            totalImageData += task.imageFileData.length;
+                        }
+                        if (task.isLightweight) {
+                            lightweightTasks++;
+                        }
+                    });
+                    
+                    updateStatus(`🎯 轻量级任务: ${lightweightTasks}/${taskCount}`, 'success');
+                    updateStatus(`📦 图片数据总量: ${formatBytes(totalImageData)}`, totalImageData > 100000 ? 'warning' : 'success');
+                }
+                
+            } catch (error) {
+                updateStatus('❌ 测试当前存储失败: ' + error.message, 'error');
+            }
+        }
+
+        function simulateOldMethod() {
+            try {
+                updateStatus('🔴 模拟旧方法：存储base64图片数据...', 'warning');
+                
+                // 模拟一个大的base64图片数据 (约1MB)
+                const fakeBase64 = 'data:image/png;base64,' + 'x'.repeat(1024 * 1024);
+                
+                const oldTask = {
+                    taskId: 'old_test_' + Date.now(),
+                    status: 'completed',
+                    progress: 100,
+                    results: [fakeBase64, fakeBase64, fakeBase64], // 3张图片
+                    imageFileData: fakeBase64, // 原始图片数据
+                    createdAt: Date.now(),
+                    prompt: 'test prompt',
+                    style: 'cute'
+                };
+
+                const testKey = 'test_old_method';
+                const testData = { [oldTask.taskId]: oldTask };
+                
+                try {
+                    localStorage.setItem(testKey, JSON.stringify(testData));
+                    const size = new Blob([JSON.stringify(testData)]).size;
+                    updateStatus(`⚠️ 旧方法存储成功，大小: ${formatBytes(size)}`, 'warning');
+                    
+                    // 立即清理
+                    localStorage.removeItem(testKey);
+                    updateStatus('🧹 已清理测试数据', 'info');
+                    
+                } catch (error) {
+                    if (error.name === 'QuotaExceededError') {
+                        updateStatus('❌ 旧方法失败：QuotaExceededError！', 'error');
+                        updateStatus('💡 这就是为什么需要优化的原因', 'info');
+                    } else {
+                        updateStatus('❌ 旧方法测试失败: ' + error.message, 'error');
+                    }
+                }
+                
+            } catch (error) {
+                updateStatus('❌ 模拟旧方法失败: ' + error.message, 'error');
+            }
+        }
+
+        function simulateNewMethod() {
+            try {
+                updateStatus('🟢 模拟新方法：存储文件URL...', 'success');
+                
+                // 模拟新方法：只存储URL
+                const newTask = {
+                    taskId: 'new_test_' + Date.now(),
+                    status: 'completed',
+                    progress: 100,
+                    results: [
+                        '/outputs/generated_123456_abc.png',
+                        '/outputs/generated_123457_def.png',
+                        '/outputs/generated_123458_ghi.png'
+                    ],
+                    imageFileData: '', // 空的图片数据
+                    isLightweight: true,
+                    createdAt: Date.now(),
+                    prompt: 'test prompt',
+                    style: 'cute'
+                };
+
+                const testKey = 'test_new_method';
+                const testData = { [newTask.taskId]: newTask };
+                
+                localStorage.setItem(testKey, JSON.stringify(testData));
+                const size = new Blob([JSON.stringify(testData)]).size;
+                updateStatus(`✅ 新方法存储成功，大小: ${formatBytes(size)}`, 'success');
+                
+                // 计算节省的空间
+                const oldSize = 3 * 1024 * 1024; // 假设旧方法3MB
+                const savings = oldSize - size;
+                const savingsPercent = ((savings / oldSize) * 100).toFixed(1);
+                
+                updateStatus(`💰 节省空间: ${formatBytes(savings)} (${savingsPercent}%)`, 'success');
+                
+                // 清理测试数据
+                localStorage.removeItem(testKey);
+                updateStatus('🧹 已清理测试数据', 'info');
+                
+            } catch (error) {
+                updateStatus('❌ 模拟新方法失败: ' + error.message, 'error');
+            }
+        }
+
+        function clearAllTests() {
+            try {
+                // 清理所有测试相关的数据
+                const keysToRemove = [];
+                for (let i = 0; i < localStorage.length; i++) {
+                    const key = localStorage.key(i);
+                    if (key && (key.includes('test_') || key === 'ip_creator_tasks')) {
+                        keysToRemove.push(key);
+                    }
+                }
+                
+                keysToRemove.forEach(key => localStorage.removeItem(key));
+                
+                updateStatus(`🧹 已清理 ${keysToRemove.length} 个测试项目`, 'success');
+                
+                // 重新检查存储
+                testCurrentStorage();
+                
+            } catch (error) {
+                updateStatus('❌ 清理测试失败: ' + error.message, 'error');
+            }
+        }
+
+        // 页面加载时自动测试
+        window.onload = function() {
+            updateStatus('🚀 完整流程测试页面已加载', 'info');
+            updateStatus('📝 这个测试展示了localStorage优化的效果', 'info');
+            testCurrentStorage();
+        };
+    </script>
+</body>
+</html>

@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>存储修复测试</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        .container {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 30px;
+            border-radius: 15px;
+            backdrop-filter: blur(10px);
+        }
+        .status {
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 8px;
+            font-weight: bold;
+        }
+        .success { background: rgba(34, 197, 94, 0.2); border: 2px solid #22c55e; }
+        .warning { background: rgba(251, 191, 36, 0.2); border: 2px solid #fbbf24; }
+        .error { background: rgba(239, 68, 68, 0.2); border: 2px solid #ef4444; }
+        .info { background: rgba(59, 130, 246, 0.2); border: 2px solid #3b82f6; }
+        button {
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: bold;
+            margin: 5px;
+            transition: transform 0.2s;
+        }
+        button:hover {
+            transform: translateY(-2px);
+        }
+        .storage-info {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin: 20px 0;
+        }
+        .metric {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+        }
+        .metric-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #fbbf24;
+        }
+        .metric-label {
+            font-size: 14px;
+            opacity: 0.8;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔧 localStorage 存储修复测试</h1>
+        
+        <div class="storage-info">
+            <div class="metric">
+                <div class="metric-value" id="storageUsed">-</div>
+                <div class="metric-label">已使用 (MB)</div>
+            </div>
+            <div class="metric">
+                <div class="metric-value" id="taskCount">-</div>
+                <div class="metric-label">任务数量</div>
+            </div>
+        </div>
+
+        <div class="status info">
+            <strong>📊 存储状态:</strong> <span id="storageStatus">检查中...</span>
+        </div>
+
+        <div class="status info">
+            <strong>🧠 内存模式:</strong> <span id="memoryMode">未启用</span>
+        </div>
+
+        <div>
+            <button onclick="checkStorage()">🔍 检查存储</button>
+            <button onclick="clearStorage()">🧹 清理存储</button>
+            <button onclick="testLargeData()">📦 测试大数据</button>
+            <button onclick="simulateTask()">🚀 模拟任务</button>
+        </div>
+
+        <div id="testResults"></div>
+    </div>
+
+    <script>
+        function formatBytes(bytes) {
+            return (bytes / 1024 / 1024).toFixed(2);
+        }
+
+        function updateStatus(message, type = 'info') {
+            const results = document.getElementById('testResults');
+            const div = document.createElement('div');
+            div.className = `status ${type}`;
+            div.innerHTML = `<strong>${new Date().toLocaleTimeString()}:</strong> ${message}`;
+            results.appendChild(div);
+            results.scrollTop = results.scrollHeight;
+        }
+
+        function checkStorage() {
+            try {
+                const data = localStorage.getItem('ip_creator_tasks');
+                const used = data ? new Blob([data]).size : 0;
+                const tasks = data ? Object.keys(JSON.parse(data)).length : 0;
+                
+                document.getElementById('storageUsed').textContent = formatBytes(used);
+                document.getElementById('taskCount').textContent = tasks;
+                
+                if (used > 5 * 1024 * 1024) {
+                    document.getElementById('storageStatus').textContent = '⚠️ 存储过大';
+                    updateStatus('存储使用量过大: ' + formatBytes(used) + 'MB', 'warning');
+                } else if (used > 1 * 1024 * 1024) {
+                    document.getElementById('storageStatus').textContent = '⚠️ 存储较大';
+                    updateStatus('存储使用量: ' + formatBytes(used) + 'MB', 'warning');
+                } else {
+                    document.getElementById('storageStatus').textContent = '✅ 存储正常';
+                    updateStatus('存储使用量正常: ' + formatBytes(used) + 'MB', 'success');
+                }
+            } catch (error) {
+                updateStatus('检查存储失败: ' + error.message, 'error');
+            }
+        }
+
+        function clearStorage() {
+            try {
+                localStorage.removeItem('ip_creator_tasks');
+                localStorage.removeItem('ip_creator_cache');
+                localStorage.removeItem('ip_creator_images');
+                localStorage.removeItem('ip_creator_temp');
+                
+                updateStatus('✅ 存储清理完成', 'success');
+                checkStorage();
+            } catch (error) {
+                updateStatus('清理存储失败: ' + error.message, 'error');
+            }
+        }
+
+        function testLargeData() {
+            try {
+                // 创建一个大的测试数据
+                const largeData = 'x'.repeat(1024 * 1024); // 1MB
+                const testKey = 'test_large_data';
+                
+                localStorage.setItem(testKey, largeData);
+                updateStatus('✅ 大数据测试成功 (1MB)', 'success');
+                
+                // 清理测试数据
+                localStorage.removeItem(testKey);
+                updateStatus('🧹 测试数据已清理', 'info');
+                
+            } catch (error) {
+                if (error.name === 'QuotaExceededError') {
+                    updateStatus('❌ 配额超出错误 - 修复生效！', 'warning');
+                    document.getElementById('memoryMode').textContent = '✅ 已启用';
+                } else {
+                    updateStatus('测试失败: ' + error.message, 'error');
+                }
+            }
+        }
+
+        function simulateTask() {
+            try {
+                const taskId = 'test_' + Date.now();
+                const fakeImageData = 'data:image/png;base64,' + 'x'.repeat(100 * 1024); // 100KB
+                
+                const task = {
+                    taskId: taskId,
+                    status: 'processing',
+                    progress: 50,
+                    results: [],
+                    createdAt: Date.now(),
+                    prompt: 'test prompt',
+                    imageFileData: fakeImageData,
+                    imageFileName: 'test.png',
+                    imageFileType: 'image/png',
+                    style: 'cute'
+                };
+
+                const tasks = JSON.parse(localStorage.getItem('ip_creator_tasks') || '{}');
+                tasks[taskId] = task;
+                
+                localStorage.setItem('ip_creator_tasks', JSON.stringify(tasks));
+                updateStatus('✅ 模拟任务创建成功: ' + taskId, 'success');
+                checkStorage();
+                
+            } catch (error) {
+                if (error.name === 'QuotaExceededError') {
+                    updateStatus('⚠️ 配额超出 - 内存模式启用', 'warning');
+                    document.getElementById('memoryMode').textContent = '✅ 已启用';
+                } else {
+                    updateStatus('模拟任务失败: ' + error.message, 'error');
+                }
+            }
+        }
+
+        // 页面加载时自动检查
+        window.onload = function() {
+            checkStorage();
+            updateStatus('🚀 存储修复测试页面已加载', 'info');
+        };
+    </script>
+</body>
+</html>

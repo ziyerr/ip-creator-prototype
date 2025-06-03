@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>图片存储测试</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        .container {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 30px;
+            border-radius: 15px;
+            backdrop-filter: blur(10px);
+        }
+        .status {
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 8px;
+            font-weight: bold;
+        }
+        .success { background: rgba(34, 197, 94, 0.2); border: 2px solid #22c55e; }
+        .warning { background: rgba(251, 191, 36, 0.2); border: 2px solid #fbbf24; }
+        .error { background: rgba(239, 68, 68, 0.2); border: 2px solid #ef4444; }
+        .info { background: rgba(59, 130, 246, 0.2); border: 2px solid #3b82f6; }
+        button {
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: bold;
+            margin: 5px;
+            transition: transform 0.2s;
+        }
+        button:hover {
+            transform: translateY(-2px);
+        }
+        .image-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }
+        .image-item {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 10px;
+            border-radius: 8px;
+            text-align: center;
+        }
+        .image-item img {
+            max-width: 100%;
+            height: 150px;
+            object-fit: cover;
+            border-radius: 8px;
+            margin-bottom: 10px;
+        }
+        .image-info {
+            font-size: 12px;
+            opacity: 0.8;
+        }
+        .metrics {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }
+        .metric {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+        }
+        .metric-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #fbbf24;
+        }
+        .metric-label {
+            font-size: 14px;
+            opacity: 0.8;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🖼️ 图片文件存储测试</h1>
+        
+        <div class="metrics">
+            <div class="metric">
+                <div class="metric-value" id="imageCount">-</div>
+                <div class="metric-label">图片文件数量</div>
+            </div>
+            <div class="metric">
+                <div class="metric-value" id="totalSize">-</div>
+                <div class="metric-label">总大小 (MB)</div>
+            </div>
+            <div class="metric">
+                <div class="metric-value" id="storageUsed">-</div>
+                <div class="metric-label">localStorage (KB)</div>
+            </div>
+        </div>
+
+        <div>
+            <button onclick="checkImages()">🔍 检查图片文件</button>
+            <button onclick="checkStorage()">📊 检查存储</button>
+            <button onclick="testImageUrl()">🧪 测试图片URL</button>
+        </div>
+
+        <div id="testResults"></div>
+        
+        <h3>📁 现有图片文件</h3>
+        <div id="imageGrid" class="image-grid"></div>
+    </div>
+
+    <script>
+        function updateStatus(message, type = 'info') {
+            const results = document.getElementById('testResults');
+            const div = document.createElement('div');
+            div.className = `status ${type}`;
+            div.innerHTML = `<strong>${new Date().toLocaleTimeString()}:</strong> ${message}`;
+            results.appendChild(div);
+            results.scrollTop = results.scrollHeight;
+        }
+
+        function formatBytes(bytes) {
+            return (bytes / 1024 / 1024).toFixed(2);
+        }
+
+        async function checkImages() {
+            try {
+                updateStatus('🔍 检查图片文件...', 'info');
+                
+                // 模拟检查 outputs 目录
+                const imageUrls = [
+                    '/outputs/generated_1748923456789_abc123.png',
+                    '/outputs/generated_1748923456790_def456.png',
+                    '/outputs/generated_1748923456791_ghi789.png'
+                ];
+                
+                let validImages = 0;
+                let totalSize = 0;
+                const imageGrid = document.getElementById('imageGrid');
+                imageGrid.innerHTML = '';
+                
+                for (const url of imageUrls) {
+                    try {
+                        const response = await fetch(url, { method: 'HEAD' });
+                        if (response.ok) {
+                            validImages++;
+                            const size = parseInt(response.headers.get('content-length') || '0');
+                            totalSize += size;
+                            
+                            // 创建图片展示
+                            const imageItem = document.createElement('div');
+                            imageItem.className = 'image-item';
+                            imageItem.innerHTML = `
+                                <img src="${url}" alt="Generated Image" onerror="this.style.display='none'">
+                                <div class="image-info">
+                                    ${url.split('/').pop()}<br>
+                                    ${(size / 1024).toFixed(1)} KB
+                                </div>
+                            `;
+                            imageGrid.appendChild(imageItem);
+                        }
+                    } catch (error) {
+                        // 图片不存在或无法访问
+                    }
+                }
+                
+                document.getElementById('imageCount').textContent = validImages;
+                document.getElementById('totalSize').textContent = formatBytes(totalSize);
+                
+                updateStatus(`✅ 找到 ${validImages} 个图片文件，总大小 ${formatBytes(totalSize)} MB`, 'success');
+                
+            } catch (error) {
+                updateStatus('❌ 检查图片文件失败: ' + error.message, 'error');
+            }
+        }
+
+        function checkStorage() {
+            try {
+                const data = localStorage.getItem('ip_creator_tasks');
+                const used = data ? new Blob([data]).size : 0;
+                
+                document.getElementById('storageUsed').textContent = (used / 1024).toFixed(1);
+                
+                if (used < 10 * 1024) { // 小于10KB
+                    updateStatus(`✅ localStorage 使用量很小: ${(used / 1024).toFixed(1)} KB`, 'success');
+                } else if (used < 100 * 1024) { // 小于100KB
+                    updateStatus(`⚠️ localStorage 使用量适中: ${(used / 1024).toFixed(1)} KB`, 'warning');
+                } else {
+                    updateStatus(`❌ localStorage 使用量过大: ${(used / 1024).toFixed(1)} KB`, 'error');
+                }
+                
+                // 显示任务详情
+                if (data) {
+                    const tasks = JSON.parse(data);
+                    const taskCount = Object.keys(tasks).length;
+                    updateStatus(`📋 当前有 ${taskCount} 个任务记录`, 'info');
+                    
+                    // 检查是否有大数据
+                    let hasLargeData = false;
+                    Object.values(tasks).forEach(task => {
+                        if (task.imageFileData && task.imageFileData.length > 1000) {
+                            hasLargeData = true;
+                        }
+                    });
+                    
+                    if (hasLargeData) {
+                        updateStatus('⚠️ 检测到任务中仍有大量图片数据', 'warning');
+                    } else {
+                        updateStatus('✅ 任务数据已优化，无大量图片数据', 'success');
+                    }
+                }
+                
+            } catch (error) {
+                updateStatus('❌ 检查存储失败: ' + error.message, 'error');
+            }
+        }
+
+        async function testImageUrl() {
+            try {
+                updateStatus('🧪 测试图片URL访问...', 'info');
+                
+                // 测试一个示例URL
+                const testUrl = '/outputs/test.png';
+                const response = await fetch(testUrl, { method: 'HEAD' });
+                
+                if (response.ok) {
+                    updateStatus('✅ 图片URL可以正常访问', 'success');
+                } else {
+                    updateStatus('ℹ️ 测试图片不存在（这是正常的）', 'info');
+                }
+                
+                // 测试实际的图片文件
+                const actualImages = document.querySelectorAll('#imageGrid img');
+                let workingImages = 0;
+                
+                actualImages.forEach(img => {
+                    img.onload = () => {
+                        workingImages++;
+                        updateStatus(`✅ 图片加载成功: ${img.src.split('/').pop()}`, 'success');
+                    };
+                    img.onerror = () => {
+                        updateStatus(`❌ 图片加载失败: ${img.src.split('/').pop()}`, 'error');
+                    };
+                });
+                
+            } catch (error) {
+                updateStatus('❌ 测试图片URL失败: ' + error.message, 'error');
+            }
+        }
+
+        // 页面加载时自动检查
+        window.onload = function() {
+            updateStatus('🚀 图片存储测试页面已加载', 'info');
+            checkStorage();
+            checkImages();
+        };
+    </script>
+</body>
+</html>
