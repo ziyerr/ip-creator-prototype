@@ -46,6 +46,9 @@ export default function HomePage() {
   }>>([])
   const [activeTaskIds, setActiveTaskIds] = useState<string[]>([])
 
+  // 上传图片URL管理（避免内存泄漏）
+  const [uploadedImageUrl, setUploadedImageUrl] = useState<string | null>(null)
+
   const router = useRouter()
 
   // 检查存储使用情况
@@ -99,15 +102,20 @@ export default function HomePage() {
     }
   }, [checkStorageUsage, clearStorage]);
 
-  // 组件卸载时清理轮询
+  // 组件卸载时清理轮询和URL
   useEffect(() => {
     return () => {
       if (currentJobId) {
         vercelPollingManager.stopPolling(currentJobId);
       }
       multiTaskManager.stopAllTasks();
+
+      // 清理图片URL避免内存泄漏
+      if (uploadedImageUrl) {
+        URL.revokeObjectURL(uploadedImageUrl);
+      }
     };
-  }, [currentJobId]);
+  }, [currentJobId, uploadedImageUrl]);
 
   const styleOptions: StyleOption[] = [
     {
@@ -153,13 +161,26 @@ export default function HomePage() {
     if (!files || files.length === 0) return
     const file = files[0]
     if (file.type.startsWith("image/")) {
+      // 清理旧的URL
+      if (uploadedImageUrl) {
+        URL.revokeObjectURL(uploadedImageUrl)
+      }
+
+      // 创建新的URL
+      const newUrl = URL.createObjectURL(file)
       setUploadedImage(file)
+      setUploadedImageUrl(newUrl)
     }
-  }, [])
+  }, [uploadedImageUrl])
 
   const removeImage = useCallback(() => {
+    // 清理URL避免内存泄漏
+    if (uploadedImageUrl) {
+      URL.revokeObjectURL(uploadedImageUrl)
+    }
     setUploadedImage(null)
-  }, [])
+    setUploadedImageUrl(null)
+  }, [uploadedImageUrl])
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault()
@@ -351,17 +372,17 @@ export default function HomePage() {
                   {uploadedImage ? (
                     <div className="relative group flex items-center justify-center">
                       <img
-                        src={URL.createObjectURL(uploadedImage)}
+                        src={uploadedImageUrl || URL.createObjectURL(uploadedImage)}
                         alt="上传的头像"
                         className={`object-contain rounded-xl shadow-lg ring-2 ring-blue-200/30 group-hover:scale-105 transition-transform duration-300 bg-white ${
                           showResults ? 'max-h-24 max-w-full' : 'max-h-64 max-w-full'
                         }`}
                         onError={(e) => {
-                          console.error('图片加载失败');
+                          console.error('上传图片预览加载失败');
                           e.currentTarget.src = "/placeholder.svg";
                         }}
                         onLoad={() => {
-                          console.log('图片加载成功');
+                          console.log('上传图片预览加载成功');
                         }}
                       />
                       <button
@@ -605,17 +626,65 @@ export default function HomePage() {
                     </div>
                   )}
 
-                  {/* 预览区域 */}
-                  <div className="border-2 border-dashed border-slate-300/80 rounded-2xl p-8 text-center bg-white/60 shadow-inner backdrop-blur">
-                    <div className="animate-pulse">
-                      <div className="w-56 h-56 bg-slate-200/80 rounded-xl mx-auto mb-4 shadow-lg" />
-                      <p className="text-slate-400 text-base">正在生成您的专属IP形象...</p>
-                      {taskProgress.length > 0 && (
-                        <p className="text-slate-500 text-sm mt-2">
+                  {/* 实时预览区域 */}
+                  <div className="border-2 border-dashed border-slate-300/80 rounded-2xl p-6 bg-white/60 shadow-inner backdrop-blur">
+                    {/* 已完成的图片预览 */}
+                    {taskProgress.some(t => t.result) ? (
+                      <div className="space-y-4">
+                        <h5 className="font-semibold text-slate-700 text-center mb-4">🎨 实时生成预览</h5>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                          {taskProgress.map((task, index) => (
+                            <div key={index} className="relative">
+                              {task.result ? (
+                                <div className="relative group">
+                                  <img
+                                    src={task.result}
+                                    alt={`任务${index + 1}生成结果`}
+                                    className="w-full aspect-square object-cover rounded-xl shadow-lg border-2 border-green-200 group-hover:scale-105 transition-transform duration-300"
+                                    onLoad={() => console.log(`任务${index + 1}预览图片加载成功`)}
+                                    onError={() => console.error(`任务${index + 1}预览图片加载失败`)}
+                                  />
+                                  <div className="absolute top-2 right-2 bg-green-500 text-white text-xs px-2 py-1 rounded-full font-bold">
+                                    ✅ 完成
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="w-full aspect-square bg-slate-200/80 rounded-xl flex items-center justify-center border-2 border-dashed border-slate-300">
+                                  <div className="text-center">
+                                    {task.status === 'processing' ? (
+                                      <>
+                                        <div className="animate-spin w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full mx-auto mb-2"></div>
+                                        <p className="text-slate-500 text-sm">生成中 {task.progress}%</p>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <div className="w-8 h-8 bg-slate-300 rounded-full mx-auto mb-2"></div>
+                                        <p className="text-slate-400 text-sm">等待中</p>
+                                      </>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                        <p className="text-slate-500 text-sm text-center">
                           已完成 {taskProgress.filter(t => t.status === 'completed').length} / {taskProgress.length} 个任务
                         </p>
-                      )}
-                    </div>
+                      </div>
+                    ) : (
+                      <div className="text-center">
+                        <div className="animate-pulse">
+                          <div className="w-56 h-56 bg-slate-200/80 rounded-xl mx-auto mb-4 shadow-lg" />
+                          <p className="text-slate-400 text-base">正在生成您的专属IP形象...</p>
+                          {taskProgress.length > 0 && (
+                            <p className="text-slate-500 text-sm mt-2">
+                              已提交 {taskProgress.length} 个任务，请耐心等待...
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
