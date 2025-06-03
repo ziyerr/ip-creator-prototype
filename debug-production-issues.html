@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>生产环境问题调试工具</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        .container {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 30px;
+            border-radius: 15px;
+            backdrop-filter: blur(10px);
+        }
+        .status {
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 8px;
+            font-weight: bold;
+        }
+        .success { background: rgba(34, 197, 94, 0.2); border: 2px solid #22c55e; }
+        .warning { background: rgba(251, 191, 36, 0.2); border: 2px solid #fbbf24; }
+        .error { background: rgba(239, 68, 68, 0.2); border: 2px solid #ef4444; }
+        .info { background: rgba(59, 130, 246, 0.2); border: 2px solid #3b82f6; }
+        button {
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: bold;
+            margin: 5px;
+            transition: transform 0.2s;
+        }
+        button:hover {
+            transform: translateY(-2px);
+        }
+        .test-section {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+        .test-section h3 {
+            margin-top: 0;
+            color: #fbbf24;
+        }
+        .test-results {
+            max-height: 600px;
+            overflow-y: auto;
+            background: rgba(0, 0, 0, 0.2);
+            padding: 15px;
+            border-radius: 8px;
+            margin: 15px 0;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+        }
+        .file-input {
+            background: rgba(255, 255, 255, 0.1);
+            border: 2px dashed #fbbf24;
+            border-radius: 8px;
+            padding: 20px;
+            text-align: center;
+            margin: 15px 0;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .file-input:hover {
+            background: rgba(255, 255, 255, 0.2);
+            border-color: #60a5fa;
+        }
+        .file-input input {
+            display: none;
+        }
+        .diagnostic-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }
+        .diagnostic-item {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 15px;
+            border-radius: 8px;
+        }
+        .diagnostic-item h4 {
+            margin-top: 0;
+            color: #fbbf24;
+            font-size: 16px;
+        }
+        .metric {
+            font-size: 14px;
+            margin: 5px 0;
+        }
+        .metric-value {
+            color: #60a5fa;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 生产环境问题调试工具</h1>
+        
+        <div class="status info">
+            <strong>🎯 目标:</strong> 暴露和诊断真实的API连接问题<br>
+            <strong>🚨 模式:</strong> 生产调试模式 - 不使用演示数据<br>
+            <strong>📊 状态:</strong> 准备分析网络连接和API响应问题
+        </div>
+
+        <div class="diagnostic-grid">
+            <div class="diagnostic-item">
+                <h4>🌐 网络连接</h4>
+                <div class="metric">状态: <span class="metric-value" id="networkStatus">未测试</span></div>
+                <div class="metric">延迟: <span class="metric-value" id="networkLatency">-</span></div>
+                <div class="metric">稳定性: <span class="metric-value" id="networkStability">-</span></div>
+            </div>
+            
+            <div class="diagnostic-item">
+                <h4>🔗 API 端点</h4>
+                <div class="metric">麻雀API: <span class="metric-value" id="maqueStatus">未测试</span></div>
+                <div class="metric">响应时间: <span class="metric-value" id="apiLatency">-</span></div>
+                <div class="metric">错误类型: <span class="metric-value" id="errorType">-</span></div>
+            </div>
+            
+            <div class="diagnostic-item">
+                <h4>📁 文件处理</h4>
+                <div class="metric">上传能力: <span class="metric-value" id="uploadCapability">未测试</span></div>
+                <div class="metric">文件大小: <span class="metric-value" id="fileSize">-</span></div>
+                <div class="metric">处理方法: <span class="metric-value" id="processingMethod">-</span></div>
+            </div>
+            
+            <div class="diagnostic-item">
+                <h4>🔧 环境信息</h4>
+                <div class="metric">浏览器: <span class="metric-value" id="browserInfo">-</span></div>
+                <div class="metric">时区: <span class="metric-value" id="timezone">-</span></div>
+                <div class="metric">连接类型: <span class="metric-value" id="connectionType">-</span></div>
+            </div>
+        </div>
+
+        <div class="test-section">
+            <h3>🧪 实际测试</h3>
+            
+            <div class="file-input" onclick="triggerFileSelect()">
+                <input type="file" id="testImage" accept="image/*,image/jpeg,image/png,image/gif,image/webp" onchange="handleFileSelect(event)">
+                <p id="fileSelectText">📁 点击选择测试图片进行真实API调用</p>
+                <p style="font-size: 14px; opacity: 0.8;">将进行真实的麻雀API调用，暴露实际错误</p>
+            </div>
+
+            <div style="margin: 10px 0;">
+                <button onclick="triggerFileSelect()" style="background: linear-gradient(45deg, #22c55e, #16a34a);">
+                    📁 选择图片文件
+                </button>
+                <button onclick="createTestImage()" style="background: linear-gradient(45deg, #f59e0b, #d97706);">
+                    🎨 创建测试图片
+                </button>
+            </div>
+
+            <div>
+                <button onclick="testRealAPI()">🚀 测试真实API</button>
+                <button onclick="testNetworkConnectivity()">🌐 网络连接测试</button>
+                <button onclick="testEnvironment()">🔧 环境检测</button>
+                <button onclick="exportLogs()">📋 导出日志</button>
+                <button onclick="clearResults()">🧹 清理</button>
+            </div>
+        </div>
+
+        <div class="test-results" id="testResults"></div>
+    </div>
+
+    <script>
+        const PROD_URL = 'https://ip-creator-ziyerrs-projects.vercel.app';
+        let selectedFile = null;
+        let testLogs = [];
+
+        function log(message, type = 'info') {
+            const timestamp = new Date().toISOString();
+            const logEntry = { timestamp, message, type };
+            testLogs.push(logEntry);
+            
+            const results = document.getElementById('testResults');
+            const div = document.createElement('div');
+            div.className = `status ${type}`;
+            div.innerHTML = `<strong>${new Date().toLocaleTimeString()}:</strong> ${message}`;
+            results.appendChild(div);
+            results.scrollTop = results.scrollHeight;
+        }
+
+        function updateMetric(id, value) {
+            const element = document.getElementById(id);
+            if (element) {
+                element.textContent = value;
+            }
+        }
+
+        function triggerFileSelect() {
+            const fileInput = document.getElementById('testImage');
+            if (fileInput) {
+                fileInput.click();
+                log('📁 触发文件选择对话框', 'info');
+            } else {
+                log('❌ 文件输入元素未找到', 'error');
+            }
+        }
+
+        function handleFileSelect(event) {
+            log('📁 文件选择事件触发', 'info');
+
+            if (!event || !event.target) {
+                log('❌ 事件对象无效', 'error');
+                return;
+            }
+
+            const files = event.target.files;
+            if (!files || files.length === 0) {
+                log('⚠️ 未选择文件', 'warning');
+                return;
+            }
+
+            const file = files[0];
+            if (!file) {
+                log('❌ 文件对象无效', 'error');
+                return;
+            }
+
+            selectedFile = file;
+            log(`✅ 文件选择成功: ${file.name} (${(file.size / 1024).toFixed(1)}KB, ${file.type})`, 'success');
+
+            // 更新UI显示
+            const fileSelectText = document.getElementById('fileSelectText');
+            if (fileSelectText) {
+                fileSelectText.textContent = `✅ 已选择: ${file.name}`;
+            }
+
+            updateMetric('fileSize', `${(file.size / 1024).toFixed(1)}KB`);
+
+            // 检查文件处理方法
+            const methods = [];
+            if (typeof file.arrayBuffer === 'function') methods.push('arrayBuffer');
+            if (typeof file.stream === 'function') methods.push('stream');
+            if (typeof file.text === 'function') methods.push('text');
+
+            updateMetric('processingMethod', methods.join(', ') || '无可用方法');
+            updateMetric('uploadCapability', '已准备');
+
+            log(`🔍 文件处理方法: ${methods.join(', ') || '无可用方法'}`, methods.length > 0 ? 'info' : 'warning');
+            log(`📋 文件详细信息: 类型=${file.type}, 大小=${file.size}字节, 最后修改=${new Date(file.lastModified).toLocaleString()}`, 'info');
+        }
+
+        function createTestImage() {
+            log('🎨 创建测试图片...', 'info');
+
+            try {
+                // 创建一个简单的测试图片
+                const canvas = document.createElement('canvas');
+                canvas.width = 200;
+                canvas.height = 200;
+                const ctx = canvas.getContext('2d');
+
+                // 绘制彩色背景
+                const gradient = ctx.createLinearGradient(0, 0, 200, 200);
+                gradient.addColorStop(0, '#667eea');
+                gradient.addColorStop(1, '#764ba2');
+                ctx.fillStyle = gradient;
+                ctx.fillRect(0, 0, 200, 200);
+
+                // 绘制文字
+                ctx.fillStyle = 'white';
+                ctx.font = 'bold 24px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText('测试图片', 100, 80);
+
+                ctx.font = '16px Arial';
+                ctx.fillText(new Date().toLocaleTimeString(), 100, 120);
+                ctx.fillText('调试工具生成', 100, 140);
+
+                // 转换为 Blob
+                canvas.toBlob((blob) => {
+                    if (blob) {
+                        const file = new File([blob], 'test-image.png', { type: 'image/png' });
+                        selectedFile = file;
+
+                        log(`✅ 测试图片创建成功: ${file.name} (${(file.size / 1024).toFixed(1)}KB)`, 'success');
+
+                        // 更新UI
+                        const fileSelectText = document.getElementById('fileSelectText');
+                        if (fileSelectText) {
+                            fileSelectText.textContent = `✅ 已创建测试图片: ${file.name}`;
+                        }
+
+                        updateMetric('fileSize', `${(file.size / 1024).toFixed(1)}KB`);
+                        updateMetric('processingMethod', 'arrayBuffer, stream, text');
+                        updateMetric('uploadCapability', '已准备');
+
+                        log('🎯 可以开始测试真实API了', 'info');
+                    } else {
+                        log('❌ 创建测试图片失败', 'error');
+                    }
+                }, 'image/png');
+
+            } catch (error) {
+                log(`❌ 创建测试图片异常: ${error.message}`, 'error');
+            }
+        }
+
+        async function testRealAPI() {
+            if (!selectedFile) {
+                log('❌ 请先选择一个测试图片', 'error');
+                return;
+            }
+
+            log('🚀 开始真实API测试 - 将暴露实际错误', 'info');
+            
+            try {
+                const formData = new FormData();
+                formData.append('prompt', '测试真实API连接');
+                formData.append('image', selectedFile);
+                formData.append('variationSeed', '0');
+
+                log(`📡 发送请求到: ${PROD_URL}/api/generate-single-image`, 'info');
+                log(`📋 请求参数: prompt=测试真实API连接, file=${selectedFile.name}`, 'info');
+                
+                const startTime = Date.now();
+                const response = await fetch(`${PROD_URL}/api/generate-single-image`, {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const endTime = Date.now();
+                const duration = endTime - startTime;
+                
+                log(`⏱️ 请求耗时: ${duration}ms`, 'info');
+                log(`📊 HTTP状态: ${response.status} ${response.statusText}`, response.ok ? 'success' : 'error');
+                
+                updateMetric('apiLatency', `${duration}ms`);
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    log(`✅ API调用成功!`, 'success');
+                    log(`📄 响应数据: ${JSON.stringify(result, null, 2)}`, 'success');
+                    updateMetric('maqueStatus', '正常');
+                    updateMetric('errorType', '无错误');
+                } else {
+                    log(`❌ API调用失败`, 'error');
+                    log(`💥 错误详情: ${JSON.stringify(result, null, 2)}`, 'error');
+                    updateMetric('maqueStatus', '失败');
+                    
+                    // 分析错误类型
+                    if (result.details) {
+                        if (result.details.includes('arrayBuffer')) {
+                            updateMetric('errorType', '文件处理错误');
+                            log(`🔍 检测到文件处理问题: ${result.details}`, 'error');
+                        } else if (result.details.includes('Failed to fetch') || result.details.includes('网络')) {
+                            updateMetric('errorType', '网络连接错误');
+                            log(`🌐 检测到网络连接问题: ${result.details}`, 'error');
+                        } else if (result.details.includes('API') || result.details.includes('401') || result.details.includes('404')) {
+                            updateMetric('errorType', 'API端点错误');
+                            log(`🔗 检测到API端点问题: ${result.details}`, 'error');
+                        } else {
+                            updateMetric('errorType', '未知错误');
+                            log(`❓ 未知错误类型: ${result.details}`, 'error');
+                        }
+                    }
+                }
+                
+            } catch (error) {
+                log(`❌ 请求异常: ${error.message}`, 'error');
+                updateMetric('maqueStatus', '异常');
+                
+                if (error.message.includes('Failed to fetch')) {
+                    updateMetric('errorType', 'CORS/网络错误');
+                    log(`🌐 网络连接问题: 无法连接到服务器`, 'error');
+                } else if (error.name === 'TypeError') {
+                    updateMetric('errorType', '类型错误');
+                    log(`🔧 类型错误: 可能是代码问题`, 'error');
+                } else {
+                    updateMetric('errorType', '未知异常');
+                    log(`❓ 未知异常类型: ${error.name}`, 'error');
+                }
+            }
+        }
+
+        async function testNetworkConnectivity() {
+            log('🌐 开始网络连接测试...', 'info');
+            
+            const endpoints = [
+                { name: '生产环境', url: PROD_URL },
+                { name: '麻雀API主域名', url: 'https://ismaque.org' },
+                { name: 'Google DNS', url: 'https://8.8.8.8' }
+            ];
+            
+            let successCount = 0;
+            const latencies = [];
+            
+            for (const endpoint of endpoints) {
+                try {
+                    log(`📡 测试连接: ${endpoint.name}`, 'info');
+                    
+                    const startTime = Date.now();
+                    const response = await fetch(endpoint.url, { 
+                        method: 'HEAD', 
+                        mode: 'no-cors',
+                        signal: AbortSignal.timeout(10000)
+                    });
+                    const endTime = Date.now();
+                    const latency = endTime - startTime;
+                    
+                    latencies.push(latency);
+                    successCount++;
+                    log(`✅ ${endpoint.name} 连接成功 (${latency}ms)`, 'success');
+                    
+                } catch (error) {
+                    log(`❌ ${endpoint.name} 连接失败: ${error.message}`, 'error');
+                }
+            }
+            
+            const avgLatency = latencies.length > 0 ? latencies.reduce((a, b) => a + b, 0) / latencies.length : 0;
+            const successRate = (successCount / endpoints.length) * 100;
+            
+            updateMetric('networkStatus', `${successCount}/${endpoints.length} 成功`);
+            updateMetric('networkLatency', `${avgLatency.toFixed(0)}ms`);
+            updateMetric('networkStability', `${successRate.toFixed(0)}%`);
+            
+            if (successRate < 50) {
+                log('🚨 网络连接不稳定，可能影响API调用', 'error');
+            } else {
+                log('✅ 网络连接正常', 'success');
+            }
+        }
+
+        function testEnvironment() {
+            log('🔧 检测环境信息...', 'info');
+            
+            // 浏览器信息
+            const browserInfo = `${navigator.userAgent.split(' ').slice(-2).join(' ')}`;
+            updateMetric('browserInfo', browserInfo);
+            log(`🌐 浏览器: ${browserInfo}`, 'info');
+            
+            // 时区信息
+            const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+            updateMetric('timezone', timezone);
+            log(`🕐 时区: ${timezone}`, 'info');
+            
+            // 连接信息
+            if ('connection' in navigator) {
+                const connection = navigator.connection;
+                const connectionType = `${connection.effectiveType || 'unknown'} (${connection.downlink || 'unknown'}Mbps)`;
+                updateMetric('connectionType', connectionType);
+                log(`📶 连接类型: ${connectionType}`, 'info');
+            } else {
+                updateMetric('connectionType', '不支持检测');
+                log(`📶 连接信息: 浏览器不支持检测`, 'warning');
+            }
+            
+            // 其他环境信息
+            log(`🖥️ 屏幕分辨率: ${screen.width}x${screen.height}`, 'info');
+            log(`💾 本地存储可用: ${typeof(Storage) !== "undefined"}`, 'info');
+            log(`🔧 Service Worker支持: ${typeof(navigator.serviceWorker) !== "undefined"}`, 'info');
+            
+            log('✅ 环境检测完成', 'success');
+        }
+
+        function exportLogs() {
+            const logData = {
+                timestamp: new Date().toISOString(),
+                userAgent: navigator.userAgent,
+                url: window.location.href,
+                logs: testLogs
+            };
+            
+            const blob = new Blob([JSON.stringify(logData, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `debug-logs-${Date.now()}.json`;
+            a.click();
+            URL.revokeObjectURL(url);
+            
+            log('📋 调试日志已导出', 'success');
+        }
+
+        function clearResults() {
+            document.getElementById('testResults').innerHTML = '';
+            testLogs = [];
+            
+            // 重置指标
+            ['networkStatus', 'networkLatency', 'networkStability', 'maqueStatus', 'apiLatency', 'errorType', 'uploadCapability', 'fileSize', 'processingMethod', 'browserInfo', 'timezone', 'connectionType'].forEach(id => {
+                updateMetric(id, id.includes('Status') || id.includes('Capability') ? '未测试' : '-');
+            });
+            
+            log('🧹 调试结果已清理', 'info');
+        }
+
+        // 页面加载时自动检测环境
+        window.onload = function() {
+            log('🚀 生产环境调试工具已加载', 'info');
+            log('⚠️ 注意: 此工具将进行真实API调用，暴露实际错误', 'warning');
+            testEnvironment();
+        };
+    </script>
+</body>
+</html>

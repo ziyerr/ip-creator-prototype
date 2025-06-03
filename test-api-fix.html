@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>API 修复验证</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        .container {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 30px;
+            border-radius: 15px;
+            backdrop-filter: blur(10px);
+        }
+        .status {
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 8px;
+            font-weight: bold;
+        }
+        .success { background: rgba(34, 197, 94, 0.2); border: 2px solid #22c55e; }
+        .warning { background: rgba(251, 191, 36, 0.2); border: 2px solid #fbbf24; }
+        .error { background: rgba(239, 68, 68, 0.2); border: 2px solid #ef4444; }
+        .info { background: rgba(59, 130, 246, 0.2); border: 2px solid #3b82f6; }
+        button {
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: bold;
+            margin: 5px;
+            transition: transform 0.2s;
+        }
+        button:hover {
+            transform: translateY(-2px);
+        }
+        .test-results {
+            max-height: 400px;
+            overflow-y: auto;
+            background: rgba(0, 0, 0, 0.2);
+            padding: 15px;
+            border-radius: 8px;
+            margin: 15px 0;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+        }
+        .comparison {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin: 20px 0;
+        }
+        .comparison-item {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 15px;
+            border-radius: 8px;
+        }
+        .comparison-item h4 {
+            margin-top: 0;
+            color: #fbbf24;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔧 API 修复验证工具</h1>
+        
+        <div class="status info">
+            <strong>🎯 验证目标:</strong> 确认 "a.arrayBuffer is not a function" 错误已修复<br>
+            <strong>📊 测试方法:</strong> 创建测试图片并调用真实API<br>
+            <strong>⏰ 修复时间:</strong> <span id="fixTime">刚刚部署</span>
+        </div>
+
+        <div class="comparison">
+            <div class="comparison-item">
+                <h4>❌ 修复前</h4>
+                <p>• 重复的 catch 块导致语法错误<br>
+                • File.arrayBuffer() 方法不可用<br>
+                • 所有API调用返回500错误<br>
+                • 错误: "a.arrayBuffer is not a function"</p>
+            </div>
+            
+            <div class="comparison-item">
+                <h4>✅ 修复后</h4>
+                <p>• 清理了重复的 catch 块<br>
+                • 多种文件处理方法备用<br>
+                • 详细的错误日志和调试信息<br>
+                • 应该能正常处理文件上传</p>
+            </div>
+        </div>
+
+        <div>
+            <button onclick="createAndTestImage()">🎨 创建测试图片并测试</button>
+            <button onclick="testLocalAPI()">💻 测试本地API</button>
+            <button onclick="testProductionAPI()">🌐 测试生产环境</button>
+            <button onclick="clearResults()">🧹 清理结果</button>
+        </div>
+
+        <div class="test-results" id="testResults"></div>
+    </div>
+
+    <script>
+        const LOCAL_URL = 'http://localhost:3000';
+        const PROD_URL = 'https://ip-creator-ziyerrs-projects.vercel.app';
+        let testImage = null;
+
+        function log(message, type = 'info') {
+            const results = document.getElementById('testResults');
+            const div = document.createElement('div');
+            div.className = `status ${type}`;
+            div.innerHTML = `<strong>${new Date().toLocaleTimeString()}:</strong> ${message}`;
+            results.appendChild(div);
+            results.scrollTop = results.scrollHeight;
+        }
+
+        function createTestImage() {
+            return new Promise((resolve) => {
+                const canvas = document.createElement('canvas');
+                canvas.width = 200;
+                canvas.height = 200;
+                const ctx = canvas.getContext('2d');
+                
+                // 绘制彩色背景
+                const gradient = ctx.createLinearGradient(0, 0, 200, 200);
+                gradient.addColorStop(0, '#667eea');
+                gradient.addColorStop(1, '#764ba2');
+                ctx.fillStyle = gradient;
+                ctx.fillRect(0, 0, 200, 200);
+                
+                // 绘制文字
+                ctx.fillStyle = 'white';
+                ctx.font = 'bold 20px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText('API修复测试', 100, 70);
+                
+                ctx.font = '14px Arial';
+                ctx.fillText(new Date().toLocaleTimeString(), 100, 100);
+                ctx.fillText('验证文件处理', 100, 120);
+                ctx.fillText('arrayBuffer修复', 100, 140);
+                
+                canvas.toBlob((blob) => {
+                    if (blob) {
+                        const file = new File([blob], 'api-fix-test.png', { type: 'image/png' });
+                        testImage = file;
+                        log(`✅ 测试图片创建成功: ${file.name} (${(file.size / 1024).toFixed(1)}KB)`, 'success');
+                        resolve(file);
+                    } else {
+                        log('❌ 创建测试图片失败', 'error');
+                        resolve(null);
+                    }
+                }, 'image/png');
+            });
+        }
+
+        async function testAPI(baseUrl, envName) {
+            if (!testImage) {
+                log('❌ 测试图片未准备好', 'error');
+                return;
+            }
+
+            log(`🧪 开始测试 ${envName} API...`, 'info');
+            
+            try {
+                const formData = new FormData();
+                formData.append('prompt', 'API修复验证测试');
+                formData.append('image', testImage);
+                formData.append('variationSeed', '0');
+
+                log(`📡 发送请求到: ${baseUrl}/api/generate-single-image`, 'info');
+                log(`📋 文件信息: ${testImage.name}, ${testImage.size}字节, ${testImage.type}`, 'info');
+                
+                const startTime = Date.now();
+                const response = await fetch(`${baseUrl}/api/generate-single-image`, {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const endTime = Date.now();
+                const duration = endTime - startTime;
+                
+                log(`⏱️ 请求耗时: ${duration}ms`, 'info');
+                log(`📊 HTTP状态: ${response.status} ${response.statusText}`, response.ok ? 'success' : 'error');
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    log(`✅ ${envName} API 测试成功!`, 'success');
+                    log(`🎉 修复生效: arrayBuffer 错误已解决`, 'success');
+                    log(`📄 响应数据: ${JSON.stringify(result, null, 2)}`, 'success');
+                    
+                    if (result.url) {
+                        log(`🖼️ 图片URL: ${result.url}`, 'success');
+                    }
+                } else {
+                    log(`❌ ${envName} API 测试失败`, 'error');
+                    log(`💥 错误详情: ${JSON.stringify(result, null, 2)}`, 'error');
+                    
+                    // 分析错误类型
+                    if (result.details) {
+                        if (result.details.includes('arrayBuffer')) {
+                            log(`🚨 arrayBuffer 错误仍然存在!`, 'error');
+                            log(`🔍 需要进一步调试文件处理逻辑`, 'warning');
+                        } else if (result.details.includes('网络') || result.details.includes('Failed to fetch')) {
+                            log(`🌐 网络连接问题`, 'warning');
+                        } else if (result.details.includes('API') || result.details.includes('401') || result.details.includes('404')) {
+                            log(`🔗 API端点或认证问题`, 'warning');
+                        } else {
+                            log(`❓ 其他类型错误: ${result.details}`, 'warning');
+                        }
+                    }
+                }
+                
+            } catch (error) {
+                log(`❌ ${envName} API 请求异常: ${error.message}`, 'error');
+                
+                if (error.message.includes('Failed to fetch')) {
+                    log(`🌐 网络连接问题或CORS错误`, 'warning');
+                } else {
+                    log(`❓ 未知异常类型: ${error.name}`, 'warning');
+                }
+            }
+        }
+
+        async function createAndTestImage() {
+            log('🎨 开始创建测试图片...', 'info');
+            
+            const image = await createTestImage();
+            if (image) {
+                log('🚀 图片创建成功，开始测试本地API...', 'info');
+                await testAPI(LOCAL_URL, '本地环境');
+            }
+        }
+
+        async function testLocalAPI() {
+            if (!testImage) {
+                await createTestImage();
+            }
+            await testAPI(LOCAL_URL, '本地环境');
+        }
+
+        async function testProductionAPI() {
+            if (!testImage) {
+                await createTestImage();
+            }
+            await testAPI(PROD_URL, '生产环境');
+        }
+
+        function clearResults() {
+            document.getElementById('testResults').innerHTML = '';
+            log('🧹 测试结果已清理', 'info');
+        }
+
+        // 页面加载时自动创建测试图片
+        window.onload = function() {
+            log('🚀 API修复验证工具已加载', 'info');
+            log('📝 将测试文件处理修复是否生效', 'info');
+            
+            // 更新修复时间
+            document.getElementById('fixTime').textContent = new Date().toLocaleString();
+            
+            // 自动创建测试图片
+            setTimeout(createTestImage, 1000);
+        };
+    </script>
+</body>
+</html>

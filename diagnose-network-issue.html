@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>网络问题诊断工具</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        .container {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 30px;
+            border-radius: 15px;
+            backdrop-filter: blur(10px);
+        }
+        .status {
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 8px;
+            font-weight: bold;
+        }
+        .success { background: rgba(34, 197, 94, 0.2); border: 2px solid #22c55e; }
+        .warning { background: rgba(251, 191, 36, 0.2); border: 2px solid #fbbf24; }
+        .error { background: rgba(239, 68, 68, 0.2); border: 2px solid #ef4444; }
+        .info { background: rgba(59, 130, 246, 0.2); border: 2px solid #3b82f6; }
+        button {
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: bold;
+            margin: 5px;
+            transition: transform 0.2s;
+        }
+        button:hover {
+            transform: translateY(-2px);
+        }
+        .test-section {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+        .test-section h3 {
+            margin-top: 0;
+            color: #fbbf24;
+        }
+        .test-results {
+            max-height: 500px;
+            overflow-y: auto;
+            background: rgba(0, 0, 0, 0.2);
+            padding: 15px;
+            border-radius: 8px;
+            margin: 15px 0;
+        }
+        .diagnostic-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin: 20px 0;
+        }
+        .diagnostic-item {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 15px;
+            border-radius: 8px;
+        }
+        .diagnostic-item h4 {
+            margin-top: 0;
+            color: #fbbf24;
+        }
+        .progress-bar {
+            width: 100%;
+            height: 20px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            overflow: hidden;
+            margin: 10px 0;
+        }
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(45deg, #22c55e, #16a34a);
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 网络问题诊断工具</h1>
+        
+        <div class="status info">
+            <strong>🎯 诊断目标:</strong> 分析 "前端异步任务处理失败，请检查网络连接后重试" 错误<br>
+            <strong>📊 诊断范围:</strong> API 连接、网络延迟、服务器状态、文件上传能力
+        </div>
+
+        <div class="diagnostic-grid">
+            <div class="diagnostic-item">
+                <h4>🌐 基础连接测试</h4>
+                <p>测试各个服务端点的可访问性</p>
+                <div class="progress-bar">
+                    <div class="progress-fill" id="basicProgress"></div>
+                </div>
+                <p id="basicStatus">等待测试...</p>
+            </div>
+            
+            <div class="diagnostic-item">
+                <h4>⚡ API 端点测试</h4>
+                <p>测试图片生成 API 的响应能力</p>
+                <div class="progress-bar">
+                    <div class="progress-fill" id="apiProgress"></div>
+                </div>
+                <p id="apiStatus">等待测试...</p>
+            </div>
+            
+            <div class="diagnostic-item">
+                <h4>📁 文件上传测试</h4>
+                <p>测试文件上传和处理能力</p>
+                <div class="progress-bar">
+                    <div class="progress-fill" id="uploadProgress"></div>
+                </div>
+                <p id="uploadStatus">等待测试...</p>
+            </div>
+            
+            <div class="diagnostic-item">
+                <h4>🕐 网络延迟测试</h4>
+                <p>测试网络延迟和稳定性</p>
+                <div class="progress-bar">
+                    <div class="progress-fill" id="latencyProgress"></div>
+                </div>
+                <p id="latencyStatus">等待测试...</p>
+            </div>
+        </div>
+
+        <div class="test-section">
+            <h3>🛠️ 诊断操作</h3>
+            <button onclick="runFullDiagnosis()">🔍 运行完整诊断</button>
+            <button onclick="testBasicConnectivity()">🌐 基础连接测试</button>
+            <button onclick="testAPIEndpoints()">⚡ API 端点测试</button>
+            <button onclick="testFileUpload()">📁 文件上传测试</button>
+            <button onclick="testNetworkLatency()">🕐 延迟测试</button>
+            <button onclick="clearResults()">🧹 清理结果</button>
+        </div>
+
+        <div class="test-results" id="testResults"></div>
+    </div>
+
+    <script>
+        const PROD_URL = 'https://ip-creator-ziyerrs-projects.vercel.app';
+        const LOCAL_URL = 'http://localhost:3000';
+        const MAQUE_API_URL = 'https://ismaque.org';
+
+        function updateStatus(message, type = 'info') {
+            const results = document.getElementById('testResults');
+            const div = document.createElement('div');
+            div.className = `status ${type}`;
+            div.innerHTML = `<strong>${new Date().toLocaleTimeString()}:</strong> ${message}`;
+            results.appendChild(div);
+            results.scrollTop = results.scrollHeight;
+        }
+
+        function updateProgress(elementId, progress, status) {
+            document.getElementById(elementId + 'Progress').style.width = progress + '%';
+            document.getElementById(elementId + 'Status').textContent = status;
+        }
+
+        async function testBasicConnectivity() {
+            updateStatus('🌐 开始基础连接测试...', 'info');
+            updateProgress('basic', 0, '开始测试...');
+
+            const endpoints = [
+                { name: '生产环境', url: PROD_URL },
+                { name: '本地环境', url: LOCAL_URL },
+                { name: '麻雀API主域名', url: MAQUE_API_URL }
+            ];
+
+            let successCount = 0;
+            
+            for (let i = 0; i < endpoints.length; i++) {
+                const endpoint = endpoints[i];
+                try {
+                    updateStatus(`📡 测试 ${endpoint.name}: ${endpoint.url}`, 'info');
+                    
+                    const startTime = Date.now();
+                    const response = await fetch(endpoint.url, { 
+                        method: 'HEAD', 
+                        mode: 'no-cors',
+                        signal: AbortSignal.timeout(10000) // 10秒超时
+                    });
+                    const endTime = Date.now();
+                    
+                    successCount++;
+                    updateStatus(`✅ ${endpoint.name} 连接成功 (${endTime - startTime}ms)`, 'success');
+                    
+                } catch (error) {
+                    updateStatus(`❌ ${endpoint.name} 连接失败: ${error.message}`, 'error');
+                }
+                
+                updateProgress('basic', ((i + 1) / endpoints.length) * 100, `${i + 1}/${endpoints.length} 完成`);
+            }
+
+            const successRate = (successCount / endpoints.length) * 100;
+            updateProgress('basic', 100, `${successCount}/${endpoints.length} 成功 (${successRate.toFixed(0)}%)`);
+            
+            if (successRate < 50) {
+                updateStatus('🚨 基础连接测试失败率过高，可能存在网络问题', 'error');
+            } else {
+                updateStatus('✅ 基础连接测试完成', 'success');
+            }
+        }
+
+        async function testAPIEndpoints() {
+            updateStatus('⚡ 开始 API 端点测试...', 'info');
+            updateProgress('api', 0, '开始测试...');
+
+            const apiEndpoints = [
+                { name: '生产环境 API', url: `${PROD_URL}/api/generate-single-image` },
+                { name: '本地环境 API', url: `${LOCAL_URL}/api/generate-single-image` }
+            ];
+
+            let successCount = 0;
+
+            for (let i = 0; i < apiEndpoints.length; i++) {
+                const endpoint = apiEndpoints[i];
+                try {
+                    updateStatus(`📡 测试 ${endpoint.name}`, 'info');
+                    
+                    const startTime = Date.now();
+                    const response = await fetch(endpoint.url, { 
+                        method: 'HEAD',
+                        signal: AbortSignal.timeout(15000) // 15秒超时
+                    });
+                    const endTime = Date.now();
+                    
+                    if (response.status === 405 || response.status === 200) {
+                        // 405 Method Not Allowed 是正常的，说明端点存在
+                        successCount++;
+                        updateStatus(`✅ ${endpoint.name} 端点可访问 (${response.status}, ${endTime - startTime}ms)`, 'success');
+                    } else {
+                        updateStatus(`⚠️ ${endpoint.name} 响应异常: ${response.status}`, 'warning');
+                    }
+                    
+                } catch (error) {
+                    updateStatus(`❌ ${endpoint.name} 测试失败: ${error.message}`, 'error');
+                    
+                    if (error.name === 'TimeoutError') {
+                        updateStatus(`🕐 ${endpoint.name} 超时 - 可能服务器响应慢`, 'warning');
+                    }
+                }
+                
+                updateProgress('api', ((i + 1) / apiEndpoints.length) * 100, `${i + 1}/${apiEndpoints.length} 完成`);
+            }
+
+            updateProgress('api', 100, `${successCount}/${apiEndpoints.length} 成功`);
+        }
+
+        async function testFileUpload() {
+            updateStatus('📁 开始文件上传测试...', 'info');
+            updateProgress('upload', 0, '创建测试文件...');
+
+            try {
+                // 创建一个小的测试图片文件
+                const canvas = document.createElement('canvas');
+                canvas.width = 100;
+                canvas.height = 100;
+                const ctx = canvas.getContext('2d');
+                
+                // 绘制一个简单的测试图案
+                ctx.fillStyle = '#ff0000';
+                ctx.fillRect(0, 0, 50, 50);
+                ctx.fillStyle = '#00ff00';
+                ctx.fillRect(50, 0, 50, 50);
+                ctx.fillStyle = '#0000ff';
+                ctx.fillRect(0, 50, 50, 50);
+                ctx.fillStyle = '#ffff00';
+                ctx.fillRect(50, 50, 50, 50);
+
+                updateProgress('upload', 25, '测试文件创建完成');
+
+                // 转换为 Blob
+                const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+                const testFile = new File([blob], 'test-image.png', { type: 'image/png' });
+                
+                updateStatus(`📋 测试文件信息: ${testFile.name}, ${testFile.size} bytes`, 'info');
+                updateProgress('upload', 50, '开始上传测试...');
+
+                // 测试文件上传到生产环境
+                const formData = new FormData();
+                formData.append('prompt', '测试图片上传功能');
+                formData.append('image', testFile);
+                formData.append('variationSeed', '0');
+
+                const startTime = Date.now();
+                const response = await fetch(`${PROD_URL}/api/generate-single-image`, {
+                    method: 'POST',
+                    body: formData,
+                    signal: AbortSignal.timeout(30000) // 30秒超时
+                });
+                const endTime = Date.now();
+
+                updateProgress('upload', 75, '分析响应...');
+
+                const result = await response.json();
+                
+                if (response.ok) {
+                    updateStatus(`✅ 文件上传测试成功 (${endTime - startTime}ms)`, 'success');
+                    updateStatus(`📊 响应数据: ${JSON.stringify(result).substring(0, 100)}...`, 'success');
+                } else {
+                    updateStatus(`❌ 文件上传失败: ${response.status}`, 'error');
+                    updateStatus(`💥 错误详情: ${JSON.stringify(result)}`, 'error');
+                    
+                    // 分析具体错误
+                    if (result.details && result.details.includes('arrayBuffer')) {
+                        updateStatus(`🔍 检测到文件处理错误 - arrayBuffer 问题`, 'error');
+                    } else if (result.details && result.details.includes('网络')) {
+                        updateStatus(`🌐 检测到网络连接问题`, 'error');
+                    } else if (result.details && result.details.includes('API')) {
+                        updateStatus(`🔗 检测到外部 API 连接问题`, 'error');
+                    }
+                }
+
+                updateProgress('upload', 100, response.ok ? '上传成功' : '上传失败');
+
+            } catch (error) {
+                updateStatus(`❌ 文件上传测试异常: ${error.message}`, 'error');
+                updateProgress('upload', 100, '测试失败');
+                
+                if (error.name === 'TimeoutError') {
+                    updateStatus(`🕐 文件上传超时 - 可能网络连接不稳定`, 'warning');
+                } else if (error.message.includes('Failed to fetch')) {
+                    updateStatus(`🌐 网络连接问题 - 无法连接到服务器`, 'error');
+                }
+            }
+        }
+
+        async function testNetworkLatency() {
+            updateStatus('🕐 开始网络延迟测试...', 'info');
+            updateProgress('latency', 0, '开始测试...');
+
+            const testCount = 5;
+            const latencies = [];
+
+            for (let i = 0; i < testCount; i++) {
+                try {
+                    updateStatus(`📡 延迟测试 ${i + 1}/${testCount}`, 'info');
+                    
+                    const startTime = Date.now();
+                    await fetch(PROD_URL, { 
+                        method: 'HEAD', 
+                        mode: 'no-cors',
+                        signal: AbortSignal.timeout(5000)
+                    });
+                    const endTime = Date.now();
+                    
+                    const latency = endTime - startTime;
+                    latencies.push(latency);
+                    updateStatus(`⚡ 第 ${i + 1} 次测试: ${latency}ms`, latency < 1000 ? 'success' : 'warning');
+                    
+                } catch (error) {
+                    updateStatus(`❌ 第 ${i + 1} 次延迟测试失败: ${error.message}`, 'error');
+                }
+                
+                updateProgress('latency', ((i + 1) / testCount) * 100, `${i + 1}/${testCount} 完成`);
+                
+                // 测试间隔
+                if (i < testCount - 1) {
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                }
+            }
+
+            if (latencies.length > 0) {
+                const avgLatency = latencies.reduce((a, b) => a + b, 0) / latencies.length;
+                const minLatency = Math.min(...latencies);
+                const maxLatency = Math.max(...latencies);
+                
+                updateStatus(`📊 延迟统计: 平均 ${avgLatency.toFixed(0)}ms, 最小 ${minLatency}ms, 最大 ${maxLatency}ms`, 'info');
+                
+                if (avgLatency < 500) {
+                    updateStatus('✅ 网络延迟良好', 'success');
+                    updateProgress('latency', 100, `平均 ${avgLatency.toFixed(0)}ms (良好)`);
+                } else if (avgLatency < 2000) {
+                    updateStatus('⚠️ 网络延迟较高，可能影响用户体验', 'warning');
+                    updateProgress('latency', 100, `平均 ${avgLatency.toFixed(0)}ms (较慢)`);
+                } else {
+                    updateStatus('❌ 网络延迟过高，严重影响使用', 'error');
+                    updateProgress('latency', 100, `平均 ${avgLatency.toFixed(0)}ms (很慢)`);
+                }
+            } else {
+                updateProgress('latency', 100, '测试失败');
+            }
+        }
+
+        async function runFullDiagnosis() {
+            updateStatus('🔍 开始运行完整诊断...', 'info');
+            
+            await testBasicConnectivity();
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            
+            await testAPIEndpoints();
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            
+            await testNetworkLatency();
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            
+            await testFileUpload();
+            
+            updateStatus('✅ 完整诊断完成！请查看上述结果分析问题原因。', 'success');
+        }
+
+        function clearResults() {
+            document.getElementById('testResults').innerHTML = '';
+            
+            // 重置进度条
+            ['basic', 'api', 'upload', 'latency'].forEach(id => {
+                updateProgress(id, 0, '等待测试...');
+            });
+            
+            updateStatus('🧹 诊断结果已清理', 'info');
+        }
+
+        // 页面加载时的提示
+        window.onload = function() {
+            updateStatus('🚀 网络问题诊断工具已加载', 'info');
+            updateStatus('💡 建议先运行"完整诊断"来全面分析网络状况', 'info');
+        };
+    </script>
+</body>
+</html>
