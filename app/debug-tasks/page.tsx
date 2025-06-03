@@ -116,6 +116,21 @@ export default function DebugTasksPage() {
             >
               清理过期任务
             </button>
+            <button
+              onClick={async () => {
+                try {
+                  const response = await fetch('/api/tasks/check-timeout', { method: 'POST' });
+                  const data = await response.json();
+                  alert(data.message || `检查完成，标记了 ${data.timeoutCount || 0} 个超时任务`);
+                  await loadData();
+                } catch (err) {
+                  alert('检查超时失败: ' + (err instanceof Error ? err.message : '未知错误'));
+                }
+              }}
+              className="px-4 py-2 bg-orange-600 text-white rounded hover:bg-orange-700"
+            >
+              检查超时任务
+            </button>
           </div>
         </div>
       )}

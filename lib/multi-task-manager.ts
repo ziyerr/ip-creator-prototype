@@ -138,8 +138,15 @@ export class MultiTaskManager {
    */
   private async checkTaskStatus(taskId: string, taskIndex: number) {
     try {
+      // 每次轮询时检查超时任务
+      try {
+        await fetch('/api/tasks/check-timeout', { method: 'POST' });
+      } catch (timeoutError) {
+        console.warn('检查超时任务失败:', timeoutError);
+      }
+
       const response = await fetch(`/api/tasks/submit-async?taskId=${taskId}`);
-      
+
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}`);
       }

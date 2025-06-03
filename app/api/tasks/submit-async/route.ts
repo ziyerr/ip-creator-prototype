@@ -169,6 +169,9 @@ export async function POST(req: NextRequest) {
 // GET - 查询任务状态
 export async function GET(req: NextRequest) {
   try {
+    // 每次查询时都检查超时任务
+    await taskManager.checkTimeoutTasks();
+
     const { searchParams } = new URL(req.url);
     const taskId = searchParams.get('taskId');
 
