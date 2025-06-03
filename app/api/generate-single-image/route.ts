@@ -328,8 +328,6 @@ export async function POST(req: NextRequest) {
         });
 
       } catch (error: any) {
-
-      } catch (error: any) {
         lastError = error;
 
         // 检查是否是网络连接错误
