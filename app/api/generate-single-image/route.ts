@@ -48,6 +48,15 @@ export async function POST(req: NextRequest) {
     }
 
     console.log('开始生成单张图片，提示词长度:', prompt.length, '变化种子:', variationSeed);
+    console.log('文件对象信息:', {
+      name: imageFile.name,
+      size: imageFile.size,
+      type: imageFile.type,
+      hasArrayBuffer: typeof imageFile.arrayBuffer === 'function',
+      hasStream: typeof imageFile.stream === 'function',
+      hasText: typeof imageFile.text === 'function',
+      constructor: imageFile.constructor.name
+    });
 
     // 🎨 为每张图片添加独特的变化指令
     const variationPrompts = [
@@ -65,9 +74,85 @@ export async function POST(req: NextRequest) {
     const apiUrl = 'https://ismaque.org/v1/images/edits';
     const apiKey = process.env.MAQUE_API_KEY || 'sk-5D59F8';
     
-    // 将文件转换为Buffer
-    const arrayBuffer = await imageFile.arrayBuffer();
-    const imageBuffer = Buffer.from(arrayBuffer);
+    // 将文件转换为Buffer - 兼容 Vercel 环境
+    let imageBuffer: Buffer;
+    try {
+      console.log('🔄 开始文件转换...');
+
+      // 方法1: 尝试标准 arrayBuffer 方法
+      if (typeof imageFile.arrayBuffer === 'function') {
+        console.log('📁 使用标准 arrayBuffer 方法');
+        const arrayBuffer = await imageFile.arrayBuffer();
+        imageBuffer = Buffer.from(arrayBuffer);
+        console.log(`✅ arrayBuffer 方法成功，大小: ${imageBuffer.length} bytes`);
+      }
+      // 方法2: 尝试 stream 方法 (Vercel 环境)
+      else if (imageFile.stream && typeof imageFile.stream === 'function') {
+        console.log('📁 使用 stream 方法 (Vercel 环境)');
+        const chunks: Uint8Array[] = [];
+        const reader = imageFile.stream().getReader();
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          chunks.push(value);
+        }
+
+        const totalLength = chunks.reduce((acc, chunk) => acc + chunk.length, 0);
+        const combined = new Uint8Array(totalLength);
+        let offset = 0;
+
+        for (const chunk of chunks) {
+          combined.set(chunk, offset);
+          offset += chunk.length;
+        }
+
+        imageBuffer = Buffer.from(combined);
+        console.log(`✅ stream 方法成功，大小: ${imageBuffer.length} bytes`);
+      }
+      // 方法3: 尝试 text 方法作为备用
+      else if (typeof imageFile.text === 'function') {
+        console.log('📁 使用 text 方法作为备用');
+        const text = await imageFile.text();
+        imageBuffer = Buffer.from(text, 'binary');
+        console.log(`⚠️ text 方法完成，大小: ${imageBuffer.length} bytes (可能不准确)`);
+      }
+      // 方法4: 直接使用 File 对象的内部数据
+      else if ((imageFile as any).buffer) {
+        console.log('📁 使用内部 buffer 属性');
+        imageBuffer = Buffer.from((imageFile as any).buffer);
+        console.log(`✅ buffer 属性成功，大小: ${imageBuffer.length} bytes`);
+      }
+      // 方法5: 最后的备用方案
+      else {
+        console.log('📁 使用最后的备用方案');
+        // 尝试将整个对象转换为字符串然后转换为 Buffer
+        const fileString = String(imageFile);
+        imageBuffer = Buffer.from(fileString, 'binary');
+        console.log(`⚠️ 备用方案完成，大小: ${imageBuffer.length} bytes (可能不正确)`);
+      }
+
+      // 验证 Buffer 是否有效
+      if (!imageBuffer || imageBuffer.length === 0) {
+        throw new Error('转换后的 Buffer 为空');
+      }
+
+      console.log(`📁 文件处理成功: ${imageFile.name}, 大小: ${imageBuffer.length} bytes`);
+
+    } catch (bufferError) {
+      console.error('文件转换失败:', bufferError);
+      console.error('文件对象详细信息:', {
+        ...Object.getOwnPropertyNames(imageFile).reduce((acc, prop) => {
+          try {
+            acc[prop] = typeof (imageFile as any)[prop];
+          } catch {
+            acc[prop] = 'inaccessible';
+          }
+          return acc;
+        }, {} as any)
+      });
+      throw new Error(`文件处理失败: ${bufferError instanceof Error ? bufferError.message : String(bufferError)}`);
+    }
     
     // 构建请求
     const apiFormData = new FormData();
