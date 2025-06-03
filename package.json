@@ -7,9 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "validate-env": "node scripts/validate-env.js",
-    "predev": "npm run validate-env",
-    "prebuild": "npm run validate-env"
+    "validate-env": "node scripts/validate-env.js"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.1",
