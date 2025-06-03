@@ -201,9 +201,9 @@ export async function POST(req: NextRequest) {
     console.log('API URL:', apiUrl);
     console.log('使用模型: gpt-image-1');
     
-    // 设置超时控制器 - 120秒
+    // 设置超时控制器 - 55秒（留5秒缓冲）
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 120000);
+    const timeoutId = setTimeout(() => controller.abort(), 55000);
     
     // 🔄 添加重试机制
     let lastError: Error | null = null;
@@ -343,7 +343,7 @@ export async function POST(req: NextRequest) {
         // 检查是否是网络连接错误
         if (error.name === 'AbortError') {
           console.error('API调用超时');
-          throw new Error('图片生成超时（120秒），请稍后重试');
+          throw new Error('图片生成超时（55秒），请稍后重试');
         } else if (error.message.includes('Failed to fetch') || error.message.includes('ECONNREFUSED') || error.message.includes('ENOTFOUND')) {
           if (retryCount < maxRetries) {
             console.warn(`🌐 网络连接失败，将重试... (${retryCount + 1}/${maxRetries + 1})`);

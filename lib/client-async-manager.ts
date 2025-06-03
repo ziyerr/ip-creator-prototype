@@ -665,7 +665,7 @@ class ClientAsyncManager {
           const timeoutId = setTimeout(() => {
             controller.abort();
             console.error(`❌ 第${imageIndex + 1}张图片API请求超时`);
-          }, 120000); // 120秒超时（并行时给更多时间）
+          }, 55000); // 55秒超时（Vercel限制）
 
           const response = await fetch('/api/generate-single-image', {
             method: 'POST',
@@ -826,7 +826,7 @@ class ClientAsyncManager {
             const timeoutId = setTimeout(() => {
               controller.abort();
               console.error('❌ API请求超时');
-            }, 90000); // 90秒超时
+            }, 55000); // 55秒超时（Vercel限制）
 
             const response = await fetch('/api/generate-single-image', {
               method: 'POST',

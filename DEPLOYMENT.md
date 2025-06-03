@@ -18,7 +18,7 @@
       "maxDuration": 30
     },
     "app/api/generate-single-image/route.ts": {
-      "maxDuration": 120
+      "maxDuration": 60
     }
   },
   "rewrites": [
@@ -45,7 +45,7 @@
 
 1. **函数超时设置**:
    - `generate-image`: 30秒（快速生成）
-   - `generate-single-image`: 120秒（支持复杂生成）
+   - `generate-single-image`: 60秒（Vercel免费计划限制）
 
 2. **静态文件缓存**:
    - `/outputs/` 目录下的图片文件缓存24小时
