@@ -65,8 +65,6 @@ export async function POST(req: NextRequest) {
     console.log(`  - Node.js版本: ${process.version}`);
     console.log(`  - 运行环境: ${process.env.NODE_ENV || 'development'}`);
     console.log(`  - Vercel环境: ${process.env.VERCEL ? 'true' : 'false'}`);
-    console.log(`  - API端点: ${apiUrl}`);
-    console.log(`  - API密钥前缀: ${apiKey.substring(0, 8)}...`);
     console.log(`  - 当前时间: ${new Date().toISOString()}`);
     console.log(`  - 内存使用: ${Math.round(process.memoryUsage().heapUsed / 1024 / 1024)}MB`);
 
@@ -85,6 +83,12 @@ export async function POST(req: NextRequest) {
     // 🚀 调用麻雀API - 只使用真实API，不使用演示模式
     const apiUrl = 'https://ismaque.org/v1/images/edits';
     const apiKey = process.env.MAQUE_API_KEY || 'sk-5D59F8';
+
+    // 🔍 API配置信息
+    console.log('🔍 API配置信息:');
+    console.log(`  - API端点: ${apiUrl}`);
+    console.log(`  - API密钥前缀: ${apiKey.substring(0, 8)}...`);
+    console.log(`  - API密钥长度: ${apiKey.length}字符`);
     
     // 将文件转换为Buffer - 兼容 Vercel 环境
     let imageBuffer: Buffer;
