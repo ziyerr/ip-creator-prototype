@@ -25,8 +25,15 @@ export default function RootLayout({
         <Script
           defer
           data-domain="popverse.ai"
-          src="https://plausible.io/js/script.js"
+          src="https://plausible.io/js/script.file-downloads.hash.outbound-links.pageview-props.revenue.tagged-events.js"
           strategy="afterInteractive"
+        />
+        <Script
+          id="plausible-init"
+          strategy="afterInteractive"
+          dangerouslySetInnerHTML={{
+            __html: `window.plausible = window.plausible || function() { (window.plausible.q = window.plausible.q || []).push(arguments) }`
+          }}
         />
       </head>
       <body className={inter.className}>
