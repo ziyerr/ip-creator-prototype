@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+export const runtime = 'nodejs';
 
 // 🚀 队列任务提交API - 快速响应，无超时限制
 // 任务提交后立即返回taskId，实际处理由Worker完成
