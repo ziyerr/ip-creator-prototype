@@ -678,21 +678,21 @@ class ClientAsyncManager {
             clearTimeout(timeoutId);
           });
 
+          let data: any;
+          const contentType = response.headers.get('content-type') || '';
+          if (contentType.includes('application/json')) {
+            data = await response.json();
+          } else {
+            const text = await response.text();
+            data = { error: '服务器返回非JSON内容', details: text };
+          }
+
           if (!response.ok) {
-            let errorDetails = '';
-            try {
-              const errorData = await response.json();
-              errorDetails = errorData.details || errorData.error || errorData.message || '';
-            } catch {
-              errorDetails = await response.text().catch(() => '无法解析错误响应');
-            }
-            
-            console.error(`❌ 第${imageIndex + 1}张图片API响应错误 ${response.status}:`, errorDetails);
+            const errorDetails = data.details || data.error || data.message || '';
+            console.error(`❌ API响应错误 ${response.status}:`, errorDetails);
             throw new Error(`第${imageIndex + 1}张图片API调用失败: HTTP ${response.status} - ${errorDetails}`);
           }
 
-          const data = await response.json();
-          
           if (!data.success || !data.url) {
             console.error(`❌ 第${imageIndex + 1}张图片API响应格式错误:`, data);
             throw new Error(`第${imageIndex + 1}张图片API响应无效 - 缺少成功标志或URL`);
@@ -832,7 +832,6 @@ class ClientAsyncManager {
               method: 'POST',
               body: formData,
               signal: controller.signal,
-              // 添加更多headers帮助调试
               headers: {
                 'Accept': 'application/json',
               }
@@ -840,21 +839,21 @@ class ClientAsyncManager {
               clearTimeout(timeoutId);
             });
 
+            let data: any;
+            const contentType = response.headers.get('content-type') || '';
+            if (contentType.includes('application/json')) {
+              data = await response.json();
+            } else {
+              const text = await response.text();
+              data = { error: '服务器返回非JSON内容', details: text };
+            }
+
             if (!response.ok) {
-              let errorDetails = '';
-              try {
-                const errorData = await response.json();
-                errorDetails = errorData.details || errorData.error || errorData.message || '';
-              } catch {
-                errorDetails = await response.text().catch(() => '无法解析错误响应');
-              }
-              
+              const errorDetails = data.details || data.error || data.message || '';
               console.error(`❌ API响应错误 ${response.status}:`, errorDetails);
               throw new Error(`第${i + 1}张图片API调用失败: HTTP ${response.status} - ${errorDetails}`);
             }
 
-            const data = await response.json();
-            
             if (!data.success || !data.url) {
               console.error(`❌ 第${i + 1}张图片API响应格式错误:`, data);
               throw new Error(`第${i + 1}张图片API响应无效 - 缺少成功标志或URL`);
