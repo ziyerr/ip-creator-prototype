@@ -5,6 +5,12 @@
     },
     "app/api/generate-single-image/route.ts": {
       "maxDuration": 60
+    },
+    "app/api/tasks/submit/route.ts": {
+      "maxDuration": 5
+    },
+    "app/api/tasks/status/[taskId]/route.ts": {
+      "maxDuration": 5
     }
   },
   "rewrites": [

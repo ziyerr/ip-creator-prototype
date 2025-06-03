@@ -6,6 +6,7 @@ import { useState, useCallback, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { Sparkles, Menu, Upload, X, Zap, Palette, Cpu, ArrowRight, Trash2 } from "lucide-react"
 import { generateImageWithReference, generateImageAsync, generateImageWithClientAsync } from "@/lib/api"
+import { pollingManager, PollingTask } from "@/lib/polling-manager"
 
 interface StyleOption {
   id: string
@@ -30,6 +31,10 @@ export default function HomePage() {
   const [errorMessage, setErrorMessage] = useState("")
   const [imageLoadStates, setImageLoadStates] = useState<Record<string, 'loading' | 'loaded' | 'error'>>({})
   const [storageInfo, setStorageInfo] = useState<{ used: number; total: number } | null>(null)
+
+  // 轮询相关状态
+  const [currentTaskId, setCurrentTaskId] = useState<string | null>(null)
+  const [pollingTask, setPollingTask] = useState<PollingTask | null>(null)
 
   const router = useRouter()
 
@@ -83,6 +88,15 @@ export default function HomePage() {
       clearStorage(); // 出错时也清理
     }
   }, [checkStorageUsage, clearStorage]);
+
+  // 组件卸载时清理轮询
+  useEffect(() => {
+    return () => {
+      if (currentTaskId) {
+        pollingManager.stopPolling(currentTaskId);
+      }
+    };
+  }, [currentTaskId]);
 
   const styleOptions: StyleOption[] = [
     {
@@ -162,73 +176,75 @@ export default function HomePage() {
     setErrorMessage("");
     setGenerationProgress(0);
     setGenerationStage("");
+    setShowResults(false);
+    setGeneratedImages([]);
 
     try {
-      // 🚀 固定使用前端异步模式（最优模式）
-      console.log('使用前端异步模式生成（浏览器本地缓存）...');
-      setGenerationStage("🚀 启动智能生成模式，并行处理3张独特图片...");
-      setGenerationProgress(10);
+      console.log('🔄 使用轮询模式生成图片...');
+      setGenerationStage("🚀 提交任务到服务器...");
+      setGenerationProgress(5);
 
-      const generatedImageUrls = await generateImageWithClientAsync({
-        prompt: '生成专属IP形象',
-        imageFile: uploadedImage,
-        style: selectedStyle as 'cute' | 'toy' | 'cyber',
-        customRequirements: customInput || undefined,
-      }, (status) => {
-        // 实时更新进度
-        setGenerationProgress(Math.max(10, status.progress));
-        setGenerationStage(status.message);
-      });
+      // 构建提示词
+      const stylePrompt = styleOptions.find(s => s.id === selectedStyle)?.slogan || '';
+      const finalPrompt = `${stylePrompt}${customInput ? `, ${customInput}` : ''}`;
 
-      // 构建结果数组
-      let results: Array<{ id: string; url: string; style: string }> = [];
-      
-      if (generatedImageUrls && generatedImageUrls.length > 0) {
-        results = generatedImageUrls.map((url, index) => ({
-          id: `generated_${Date.now()}_${index}`,
-          url: url,
-          style: getStyleLabel(selectedStyle)
-        }));
-      } else {
-        // 如果没有返回图片，使用占位符
-        results = [
-          { id: "1", url: "/placeholder.svg?height=300&width=300", style: "方案A" },
-          { id: "2", url: "/placeholder.svg?height=300&width=300", style: "方案B" },
-          { id: "3", url: "/placeholder.svg?height=300&width=300", style: "方案C" }
-        ];
-      }
-      
-      // 最终进度
-      setGenerationProgress(100);
-      setGenerationStage("✨ 生成完成！");
-      
-      // 短暂延迟后显示结果
-      setTimeout(() => {
-        setGeneratedImages(results);
-        setIsGenerating(false);
-        setGenerationProgress(0);
-        setGenerationStage("");
-        setShowResults(true);
-      }, 500);
-      
-    } catch (error: any) {
-      console.error('生成过程中出错:', error);
-      setIsGenerating(false);
-      setGenerationProgress(0);
-      setGenerationStage("");
-      
-      let errorMessage = '未知错误';
-      if (error instanceof Error) {
-        if (error.message.includes('超时')) {
-          errorMessage = '图片生成超时，请检查网络连接后重试';
-        } else if (error.message.includes('前端异步任务')) {
-          errorMessage = '图片生成失败，请检查网络连接后重试';
-        } else {
-          errorMessage = error.message;
+      // 提交任务并开始轮询
+      const taskId = await pollingManager.submitTask(
+        finalPrompt,
+        uploadedImage,
+        {
+          onProgress: (task: PollingTask) => {
+            console.log('📊 轮询进度更新:', task);
+            setPollingTask(task);
+            setGenerationProgress(task.progress);
+            setGenerationStage(task.message);
+          },
+          onCompleted: (task: PollingTask) => {
+            console.log('✅ 任务完成:', task);
+
+            if (task.results && task.results.length > 0) {
+              const results = task.results.map((url, index) => ({
+                id: `generated_${Date.now()}_${index}`,
+                url: url,
+                style: getStyleLabel(selectedStyle)
+              }));
+
+              setGeneratedImages(results);
+              setShowResults(true);
+            } else {
+              throw new Error('没有生成任何图片');
+            }
+
+            setIsGenerating(false);
+            setCurrentTaskId(null);
+            setPollingTask(null);
+          },
+          onFailed: (task: PollingTask) => {
+            console.error('❌ 任务失败:', task);
+            setIsGenerating(false);
+            setCurrentTaskId(null);
+            setPollingTask(null);
+            setErrorMessage(task.error || '生成失败');
+            alert(`生成失败: ${task.error || '未知错误'}`);
+          },
+          onStatusChange: (task: PollingTask) => {
+            console.log('🔄 状态变化:', task.status);
+          }
         }
-      }
-      
-      alert(`生成失败: ${errorMessage}`);
+      );
+
+      setCurrentTaskId(taskId);
+      console.log('📝 任务已提交，ID:', taskId);
+
+    } catch (error: any) {
+      console.error('❌ 提交任务失败:', error);
+      setIsGenerating(false);
+      setCurrentTaskId(null);
+      setPollingTask(null);
+
+      const errorMessage = error instanceof Error ? error.message : '未知错误';
+      setErrorMessage(errorMessage);
+      alert(`提交失败: ${errorMessage}`);
     }
   }, [uploadedImage, selectedStyle, customInput]);
 
@@ -456,12 +472,12 @@ export default function HomePage() {
                         <Sparkles className="w-4 h-4 text-white" />
                       </div>
                       <div className="flex-1">
-                        <div className="font-bold text-slate-800">🚀 智能生成模式</div>
-                        <div className="text-sm text-slate-600">并行生成3张独特图片，40-60秒完成，实时进度反馈</div>
+                        <div className="font-bold text-slate-800">🔄 轮询生成模式</div>
+                        <div className="text-sm text-slate-600">任务提交后10秒轮询一次，生成3张独特图片，60秒内完成</div>
                       </div>
                     </div>
                     <div className="text-xs text-blue-600 bg-blue-100 rounded-lg px-3 py-1 inline-block">
-                      ✅ 最快速度 ✅ 最高成功率 ✅ 实时反馈
+                      ✅ 稳定可靠 ✅ 实时轮询 ✅ 无超时限制
                     </div>
                   </div>
                 </div>
