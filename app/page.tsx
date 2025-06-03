@@ -170,7 +170,7 @@ export default function HomePage() {
   )
 
   const handleGenerate = useCallback(async () => {
-    if (!uploadedImage || !selectedStyle) return
+    if (!uploadedImage || !selectedStyle) return;
 
     setIsGenerating(true);
     setErrorMessage("");
@@ -180,76 +180,45 @@ export default function HomePage() {
     setGeneratedImages([]);
 
     try {
-      console.log('🔄 使用Vercel轮询模式生成图片...');
-      setGenerationStage("🚀 提交任务到Vercel服务器...");
+      setGenerationStage("🚀 提交异步任务...");
       setGenerationProgress(5);
 
-      // 构建提示词
+      // 构建完整提示词
       const stylePrompt = styleOptions.find(s => s.id === selectedStyle)?.slogan || '';
       const finalPrompt = `${stylePrompt}${customInput ? `, ${customInput}` : ''}`;
 
-      // 提交任务并开始轮询
-      const jobId = await vercelPollingManager.submitJob(
-        finalPrompt,
-        uploadedImage,
+      // 调用异步任务API
+      const results = await generateImageAsync(
         {
-          onProgress: (job: VercelJob) => {
-            console.log('📊 Vercel轮询进度更新:', job);
-            setVercelJob(job);
-
-            // 根据状态设置进度
-            let progress = 10;
-            if (job.status === 'processing') progress = 50;
-            if (job.status === 'completed') progress = 100;
-
-            setGenerationProgress(progress);
-            setGenerationStage(job.message);
-          },
-          onCompleted: (job: VercelJob) => {
-            console.log('✅ Vercel任务完成:', job);
-
-            if (job.results && job.results.length > 0) {
-              const results = job.results.map((url, index) => ({
-                id: `generated_${Date.now()}_${index}`,
-                url: url,
-                style: getStyleLabel(selectedStyle)
-              }));
-
-              setGeneratedImages(results);
-              setShowResults(true);
-            } else {
-              throw new Error('没有生成任何图片');
-            }
-
-            setIsGenerating(false);
-            setCurrentJobId(null);
-            setVercelJob(null);
-          },
-          onFailed: (job: VercelJob) => {
-            console.error('❌ Vercel任务失败:', job);
-            setIsGenerating(false);
-            setCurrentJobId(null);
-            setVercelJob(null);
-            setErrorMessage(job.error || '生成失败');
-            alert(`生成失败: ${job.error || '未知错误'}`);
-          },
-          onStatusChange: (job: VercelJob) => {
-            console.log('🔄 Vercel状态变化:', job.status);
-          }
+          prompt: finalPrompt,
+          imageFile: uploadedImage,
+          style: selectedStyle as any,
+          customRequirements: customInput,
+        },
+        ({ progress, message, status }) => {
+          setGenerationProgress(progress || 0);
+          setGenerationStage(message || "");
         }
       );
 
-      setCurrentJobId(jobId);
-      console.log('📝 Vercel任务已提交，ID:', jobId);
+      if (results && results.length > 0) {
+        const imgs = results.map((url, index) => ({
+          id: `generated_${Date.now()}_${index}`,
+          url,
+          style: getStyleLabel(selectedStyle)
+        }));
+        setGeneratedImages(imgs);
+        setShowResults(true);
+      } else {
+        throw new Error('没有生成任何图片');
+      }
 
-    } catch (error: any) {
-      console.error('❌ 提交Vercel任务失败:', error);
       setIsGenerating(false);
-      setCurrentJobId(null);
-      setVercelJob(null);
-
+    } catch (error: any) {
+      setIsGenerating(false);
       const errorMessage = error instanceof Error ? error.message : '未知错误';
       setErrorMessage(errorMessage);
+      setGenerationStage('❌ 生成失败');
       alert(`提交失败: ${errorMessage}`);
     }
   }, [uploadedImage, selectedStyle, customInput]);
