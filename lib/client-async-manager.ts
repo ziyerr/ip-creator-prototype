@@ -64,6 +64,9 @@ class ClientAsyncManager {
     // 🕒 启动2分钟超时检测
     this.startTimeoutMonitoring(taskId);
     
+    // 🔄 启动5秒间隔轮询监听机制
+    this.startPollingMonitoring(taskId);
+    
     return taskId;
   }
 
@@ -516,7 +519,86 @@ class ClientAsyncManager {
   // 清理所有任务
   clearAllTasks(): void {
     localStorage.removeItem(this.STORAGE_KEY);
-    console.log('🗑️ 已清理所有本地任务');
+    console.log('��️ 已清理所有本地任务');
+  }
+
+  // 🔄 启动5秒间隔轮询监听机制
+  private startPollingMonitoring(taskId: string): void {
+    const pollInterval = 5000; // 5秒间隔
+    
+    const pollTask = () => {
+      const task = this.getTaskStatus(taskId);
+      if (!task) {
+        console.log(`📭 任务 ${taskId} 不存在，停止轮询监听`);
+        return; // 任务不存在，停止轮询
+      }
+      
+      // 如果任务已完成或失败，停止轮询
+      if (task.status === 'completed' || task.status === 'failed') {
+        console.log(`🏁 任务 ${taskId} 已${task.status === 'completed' ? '完成' : '失败'}，停止轮询监听`);
+        return;
+      }
+      
+      // 🔍 检查是否有新的图片结果
+      const currentResults = task.results || [];
+      const resultCount = currentResults.length;
+      
+      console.log(`🔍 轮询检查任务 ${taskId}: 状态=${task.status}, 进度=${task.progress}%, 图片数=${resultCount}`);
+      
+      // 如果有新图片，触发UI更新（通过自定义事件）
+      if (resultCount > 0) {
+        console.log(`📸 发现${resultCount}张新图片，触发UI更新事件`);
+        
+        // 发送自定义事件通知UI更新
+        const updateEvent = new CustomEvent('taskProgressUpdate', {
+          detail: {
+            taskId,
+            status: task.status,
+            progress: task.progress,
+            results: currentResults,
+            message: `已生成${resultCount}张图片，继续生成中...`,
+            timestamp: Date.now()
+          }
+        });
+        
+        window.dispatchEvent(updateEvent);
+      }
+      
+      // 🎯 根据当前状态提供详细反馈
+      let statusMessage = '';
+      if (task.status === 'processing') {
+        if (task.progress < 40) {
+          statusMessage = '🔍 正在分析上传图片和准备生成参数...';
+        } else if (resultCount === 0) {
+          statusMessage = '🎨 AI正在努力生成第1张图片...';
+        } else if (resultCount === 1) {
+          statusMessage = '🖼️ 第1张图片已完成，正在生成第2张...';
+        } else if (resultCount === 2) {
+          statusMessage = '🎉 已完成2张图片，正在生成最后1张...';
+        } else {
+          statusMessage = '✨ 正在验证和优化生成结果...';
+        }
+        
+        // 发送状态更新事件
+        const statusEvent = new CustomEvent('taskStatusUpdate', {
+          detail: {
+            taskId,
+            message: statusMessage,
+            progress: task.progress,
+            resultCount,
+            timestamp: Date.now()
+          }
+        });
+        
+        window.dispatchEvent(statusEvent);
+      }
+      
+      // 继续轮询（每5秒检查一次）
+      setTimeout(pollTask, pollInterval);
+    };
+    
+    // 立即开始第一次轮询
+    setTimeout(pollTask, 1000); // 1秒后开始轮询
   }
 }
 

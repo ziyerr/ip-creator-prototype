@@ -166,13 +166,13 @@ export async function generateImageAsync(
 // 导入前端异步管理器
 import { clientAsyncManager, type ClientTask } from './client-async-manager';
 
-// 🚀 新增：浏览器本地缓存异步生成函数
+// 🚀 新增：浏览器本地缓存异步生成函数 - 支持5秒间隔实时图片显示
 export async function generateImageWithClientAsync(params: {
   prompt: string;
   imageFile: File;
   style: 'cute' | 'toy' | 'cyber';
   customRequirements?: string;
-}, onProgress?: (progress: { status: string; progress: number; message: string }) => void): Promise<string[]> {
+}, onProgress?: (progress: { status: string; progress: number; message: string; results?: string[]; resultCount?: number }) => void): Promise<string[]> {
   
   console.log('🌐 启动前端异步模式，使用浏览器本地缓存...');
   
@@ -191,35 +191,99 @@ export async function generateImageWithClientAsync(params: {
   
   console.log(`📋 前端任务创建成功: ${taskId}`);
   
-  // 轮询检查任务状态
+  // 设置事件监听器 - 监听5秒间隔的轮询结果
   return new Promise((resolve, reject) => {
-    const pollInterval = 2000; // 2秒轮询一次
-    const maxPollTime = 5 * 60 * 1000; // 最多轮询5分钟
+    let lastResultCount = 0; // 记录上次显示的图片数量
+    
+    // 监听任务进度更新事件（包含图片结果）
+    const handleProgressUpdate = (event: Event) => {
+      const customEvent = event as CustomEvent;
+      const { taskId: eventTaskId, status, progress, results, message } = customEvent.detail;
+      
+      // 只处理当前任务的事件
+      if (eventTaskId !== taskId) return;
+      
+      const currentResultCount = results ? results.length : 0;
+      
+      console.log(`📸 收到任务进度更新: ${currentResultCount}张图片, 进度${progress}%`);
+      
+      // 如果有新图片或进度更新，立即通知UI
+      if (onProgress) {
+        onProgress({
+          status,
+          progress,
+          message: message || `已生成${currentResultCount}张图片...`,
+          results: results || [],
+          resultCount: currentResultCount
+        });
+      }
+      
+      // 记录当前图片数量
+      lastResultCount = currentResultCount;
+    };
+    
+    // 监听任务状态更新事件（状态消息）
+    const handleStatusUpdate = (event: Event) => {
+      const customEvent = event as CustomEvent;
+      const { taskId: eventTaskId, message, progress, resultCount } = customEvent.detail;
+      
+      // 只处理当前任务的事件
+      if (eventTaskId !== taskId) return;
+      
+      console.log(`📋 收到状态更新: ${message}`);
+      
+      // 更新状态消息
+      if (onProgress) {
+        onProgress({
+          status: 'processing',
+          progress: progress || 0,
+          message: message,
+          resultCount: resultCount || 0
+        });
+      }
+    };
+    
+    // 添加事件监听器
+    window.addEventListener('taskProgressUpdate', handleProgressUpdate);
+    window.addEventListener('taskStatusUpdate', handleStatusUpdate);
+    
+    // 设置主要轮询检查（作为备用机制）
+    const pollInterval = 3000; // 3秒轮询一次作为备用
+    const maxPollTime = 8 * 60 * 1000; // 最多轮询8分钟（比前端任务超时时间长）
     const startTime = Date.now();
     
     const poll = () => {
       const task = clientAsyncManager.getTaskStatus(taskId);
       
       if (!task) {
+        cleanup();
         reject(new Error('任务不存在或已过期'));
         return;
       }
       
-      // 更新进度回调
-      if (onProgress) {
-        const message = clientAsyncManager.getStatusMessage(task.status, task.progress);
-        onProgress({
-          status: task.status,
-          progress: task.progress,
-          message: message
-        });
-      }
+      console.log(`🔍 备用轮询检查: ${task.status} ${task.progress}% (${task.results.length}张图片)`);
       
-      console.log(`🔍 轮询任务状态: ${task.status} ${task.progress}%`);
+      // 如果有新图片且5秒监听没有触发，手动触发更新
+      if (task.results.length > lastResultCount) {
+        console.log(`📸 备用轮询发现新图片: ${task.results.length}张`);
+        
+        if (onProgress) {
+          onProgress({
+            status: task.status,
+            progress: task.progress,
+            message: `已生成${task.results.length}张图片...`,
+            results: task.results,
+            resultCount: task.results.length
+          });
+        }
+        
+        lastResultCount = task.results.length;
+      }
       
       // 检查任务状态
       if (task.status === 'completed') {
         console.log(`✅ 前端异步任务完成，获得 ${task.results.length} 张图片`);
+        cleanup();
         resolve(task.results);
         return;
       }
@@ -227,13 +291,15 @@ export async function generateImageWithClientAsync(params: {
       if (task.status === 'failed') {
         const errorMsg = task.error || '未知错误';
         console.error(`❌ 前端异步任务失败: ${errorMsg}`);
-        reject(new Error(`前端异步任务失败: ${errorMsg}`));
+        cleanup();
+        reject(new Error(errorMsg));
         return;
       }
       
       // 检查超时
       if (Date.now() - startTime > maxPollTime) {
         console.error('🕐 前端异步任务轮询超时');
+        cleanup();
         reject(new Error('前端异步任务轮询超时，请刷新页面重试'));
         return;
       }
@@ -242,7 +308,13 @@ export async function generateImageWithClientAsync(params: {
       setTimeout(poll, pollInterval);
     };
     
-    // 开始轮询
-    setTimeout(poll, 1000); // 1秒后开始第一次轮询
+    // 清理函数
+    const cleanup = () => {
+      window.removeEventListener('taskProgressUpdate', handleProgressUpdate);
+      window.removeEventListener('taskStatusUpdate', handleStatusUpdate);
+    };
+    
+    // 开始轮询（延迟启动，优先使用5秒监听机制）
+    setTimeout(poll, 6000); // 6秒后开始备用轮询
   });
 }
