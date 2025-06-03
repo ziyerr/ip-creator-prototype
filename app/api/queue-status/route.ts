@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-
+export const runtime = 'nodejs';
 // 🔍 队列任务状态查询API
 // 支持轮询查询任务处理进度和结果
 
