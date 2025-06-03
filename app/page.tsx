@@ -6,7 +6,7 @@ import { useState, useCallback, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { Sparkles, Menu, Upload, X, Zap, Palette, Cpu, ArrowRight, Trash2 } from "lucide-react"
 import { generateImageWithReference, generateImageAsync, generateImageWithClientAsync } from "@/lib/api"
-import { pollingManager, PollingTask } from "@/lib/polling-manager"
+import { vercelPollingManager, VercelJob } from "@/lib/vercel-polling-manager"
 
 interface StyleOption {
   id: string
@@ -32,9 +32,9 @@ export default function HomePage() {
   const [imageLoadStates, setImageLoadStates] = useState<Record<string, 'loading' | 'loaded' | 'error'>>({})
   const [storageInfo, setStorageInfo] = useState<{ used: number; total: number } | null>(null)
 
-  // 轮询相关状态
-  const [currentTaskId, setCurrentTaskId] = useState<string | null>(null)
-  const [pollingTask, setPollingTask] = useState<PollingTask | null>(null)
+  // Vercel轮询相关状态
+  const [currentJobId, setCurrentJobId] = useState<string | null>(null)
+  const [vercelJob, setVercelJob] = useState<VercelJob | null>(null)
 
   const router = useRouter()
 
@@ -89,14 +89,14 @@ export default function HomePage() {
     }
   }, [checkStorageUsage, clearStorage]);
 
-  // 组件卸载时清理轮询
+  // 组件卸载时清理Vercel轮询
   useEffect(() => {
     return () => {
-      if (currentTaskId) {
-        pollingManager.stopPolling(currentTaskId);
+      if (currentJobId) {
+        vercelPollingManager.stopPolling(currentJobId);
       }
     };
-  }, [currentTaskId]);
+  }, [currentJobId]);
 
   const styleOptions: StyleOption[] = [
     {
@@ -180,8 +180,8 @@ export default function HomePage() {
     setGeneratedImages([]);
 
     try {
-      console.log('🔄 使用轮询模式生成图片...');
-      setGenerationStage("🚀 提交任务到服务器...");
+      console.log('🔄 使用Vercel轮询模式生成图片...');
+      setGenerationStage("🚀 提交任务到Vercel服务器...");
       setGenerationProgress(5);
 
       // 构建提示词
@@ -189,21 +189,27 @@ export default function HomePage() {
       const finalPrompt = `${stylePrompt}${customInput ? `, ${customInput}` : ''}`;
 
       // 提交任务并开始轮询
-      const taskId = await pollingManager.submitTask(
+      const jobId = await vercelPollingManager.submitJob(
         finalPrompt,
         uploadedImage,
         {
-          onProgress: (task: PollingTask) => {
-            console.log('📊 轮询进度更新:', task);
-            setPollingTask(task);
-            setGenerationProgress(task.progress);
-            setGenerationStage(task.message);
-          },
-          onCompleted: (task: PollingTask) => {
-            console.log('✅ 任务完成:', task);
+          onProgress: (job: VercelJob) => {
+            console.log('📊 Vercel轮询进度更新:', job);
+            setVercelJob(job);
 
-            if (task.results && task.results.length > 0) {
-              const results = task.results.map((url, index) => ({
+            // 根据状态设置进度
+            let progress = 10;
+            if (job.status === 'processing') progress = 50;
+            if (job.status === 'completed') progress = 100;
+
+            setGenerationProgress(progress);
+            setGenerationStage(job.message);
+          },
+          onCompleted: (job: VercelJob) => {
+            console.log('✅ Vercel任务完成:', job);
+
+            if (job.results && job.results.length > 0) {
+              const results = job.results.map((url, index) => ({
                 id: `generated_${Date.now()}_${index}`,
                 url: url,
                 style: getStyleLabel(selectedStyle)
@@ -216,31 +222,31 @@ export default function HomePage() {
             }
 
             setIsGenerating(false);
-            setCurrentTaskId(null);
-            setPollingTask(null);
+            setCurrentJobId(null);
+            setVercelJob(null);
           },
-          onFailed: (task: PollingTask) => {
-            console.error('❌ 任务失败:', task);
+          onFailed: (job: VercelJob) => {
+            console.error('❌ Vercel任务失败:', job);
             setIsGenerating(false);
-            setCurrentTaskId(null);
-            setPollingTask(null);
-            setErrorMessage(task.error || '生成失败');
-            alert(`生成失败: ${task.error || '未知错误'}`);
+            setCurrentJobId(null);
+            setVercelJob(null);
+            setErrorMessage(job.error || '生成失败');
+            alert(`生成失败: ${job.error || '未知错误'}`);
           },
-          onStatusChange: (task: PollingTask) => {
-            console.log('🔄 状态变化:', task.status);
+          onStatusChange: (job: VercelJob) => {
+            console.log('🔄 Vercel状态变化:', job.status);
           }
         }
       );
 
-      setCurrentTaskId(taskId);
-      console.log('📝 任务已提交，ID:', taskId);
+      setCurrentJobId(jobId);
+      console.log('📝 Vercel任务已提交，ID:', jobId);
 
     } catch (error: any) {
-      console.error('❌ 提交任务失败:', error);
+      console.error('❌ 提交Vercel任务失败:', error);
       setIsGenerating(false);
-      setCurrentTaskId(null);
-      setPollingTask(null);
+      setCurrentJobId(null);
+      setVercelJob(null);
 
       const errorMessage = error instanceof Error ? error.message : '未知错误';
       setErrorMessage(errorMessage);
@@ -472,12 +478,12 @@ export default function HomePage() {
                         <Sparkles className="w-4 h-4 text-white" />
                       </div>
                       <div className="flex-1">
-                        <div className="font-bold text-slate-800">🔄 轮询生成模式</div>
-                        <div className="text-sm text-slate-600">任务提交后10秒轮询一次，生成3张独特图片，60秒内完成</div>
+                        <div className="font-bold text-slate-800">🚀 Vercel智能模式</div>
+                        <div className="text-sm text-slate-600">无服务器架构，同步生成3张独特图片，适配Vercel部署环境</div>
                       </div>
                     </div>
                     <div className="text-xs text-blue-600 bg-blue-100 rounded-lg px-3 py-1 inline-block">
-                      ✅ 稳定可靠 ✅ 实时轮询 ✅ 无超时限制
+                      ✅ 无服务器 ✅ 同步响应 ✅ Vercel优化
                     </div>
                   </div>
                 </div>

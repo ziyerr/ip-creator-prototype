@@ -6,10 +6,10 @@ import { TaskManager } from '@/lib/task-manager';
 
 export async function GET(
   req: NextRequest,
-  { params }: { params: { taskId: string } }
+  { params }: { params: Promise<{ taskId: string }> }
 ) {
   try {
-    const { taskId } = params;
+    const { taskId } = await params;
     
     console.log(`🔍 查询任务状态: ${taskId}`);
     
@@ -21,8 +21,8 @@ export async function GET(
       );
     }
     
-    // 获取任务信息
-    const task = TaskManager.getTask(taskId);
+    // 获取任务信息（异步）
+    const task = await TaskManager.getTask(taskId);
     
     if (!task) {
       return NextResponse.json(

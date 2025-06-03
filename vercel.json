@@ -7,9 +7,9 @@
       "maxDuration": 60
     },
     "app/api/tasks/submit/route.ts": {
-      "maxDuration": 5
+      "maxDuration": 60
     },
-    "app/api/tasks/status/[taskId]/route.ts": {
+    "app/api/checkImageStatus/route.ts": {
       "maxDuration": 5
     }
   },
