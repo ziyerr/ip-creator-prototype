@@ -49,8 +49,13 @@ async function processImageGeneration(taskId: string, prompt: string, imageFile?
     await taskManager.markGenerationStarted(taskId);
 
     console.log(`🚀 开始调用麻雀API生成图片，任务ID: ${taskId}`);
+    console.log(`📡 API URL: ${apiUrl}`);
+    console.log(`🔑 API Key: ${apiKey ? `${apiKey.substring(0, 10)}...` : '未设置'}`);
 
     // 调用麻雀API
+    const startTime = Date.now();
+    console.log(`⏰ API调用开始时间: ${new Date().toISOString()}`);
+
     const response = await fetch(apiUrl, {
       method: 'POST',
       headers: {
@@ -59,14 +64,27 @@ async function processImageGeneration(taskId: string, prompt: string, imageFile?
       body: apiFormData,
     });
 
+    const endTime = Date.now();
+    const duration = endTime - startTime;
+    console.log(`⏱️ API调用耗时: ${duration}ms`);
+    console.log(`📥 API响应状态: ${response.status} ${response.statusText}`);
+
     await taskManager.updateTask(taskId, { progress: 80 });
 
     if (!response.ok) {
       const errorText = await response.text();
+      console.error(`❌ API调用失败: ${response.status} ${response.statusText}`);
+      console.error(`📄 错误详情: ${errorText}`);
       throw new Error(`API调用失败: ${response.status} - ${errorText}`);
     }
 
+    console.log(`✅ API调用成功，开始解析响应数据...`);
     const result = await response.json();
+    console.log(`📊 API返回数据结构:`, {
+      hasData: !!result.data,
+      dataLength: result.data?.length || 0,
+      firstItemKeys: result.data?.[0] ? Object.keys(result.data[0]) : []
+    });
     
     // 提取图片数据并转换为data URL（单张图片）
     const imageData = result.data?.[0];
