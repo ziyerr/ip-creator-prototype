@@ -1,40 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { randomUUID } from 'crypto';
-
-// 内存存储任务状态（生产环境建议使用Redis）
-const tasks = new Map<string, {
-  id: string;
-  status: 'pending' | 'processing' | 'completed' | 'failed';
-  progress: number;
-  prompt?: string;
-  imageFile?: string;
-  results?: string[];
-  error?: string;
-  createdAt: number;
-}>();
-
-// 清理过期任务（24小时）
-function cleanupExpiredTasks() {
-  const now = Date.now();
-  const expireTime = 24 * 60 * 60 * 1000; // 24小时
-  
-  for (const [taskId, task] of tasks.entries()) {
-    if (now - task.createdAt > expireTime) {
-      tasks.delete(taskId);
-    }
-  }
-}
+import { taskManager } from '@/lib/supabase';
 
 // 异步处理图片生成
 async function processImageGeneration(taskId: string, prompt: string, imageFile?: File) {
   try {
     // 更新状态为处理中
-    const task = tasks.get(taskId);
-    if (!task) return;
-    
-    task.status = 'processing';
-    task.progress = 10;
-    tasks.set(taskId, task);
+    await taskManager.updateTask(taskId, {
+      status: 'processing',
+      progress: 10
+    });
 
     const apiKey = process.env.MAQUE_API_KEY;
     const apiUrl = process.env.MAQUE_API_URL || 'https://ismaque.org/v1/images/edits';
@@ -60,8 +35,7 @@ async function processImageGeneration(taskId: string, prompt: string, imageFile?
     apiFormData.append('model', 'gpt-image-1');
 
     // 更新进度
-    task.progress = 30;
-    tasks.set(taskId, task);
+    await taskManager.updateTask(taskId, { progress: 30 });
 
     // 调用麻雀API
     const response = await fetch(apiUrl, {
@@ -72,8 +46,7 @@ async function processImageGeneration(taskId: string, prompt: string, imageFile?
       body: apiFormData,
     });
 
-    task.progress = 80;
-    tasks.set(taskId, task);
+    await taskManager.updateTask(taskId, { progress: 80 });
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -98,19 +71,18 @@ async function processImageGeneration(taskId: string, prompt: string, imageFile?
     }
 
     // 任务完成
-    task.status = 'completed';
-    task.progress = 100;
-    task.results = imageUrls;
-    tasks.set(taskId, task);
+    await taskManager.updateTask(taskId, {
+      status: 'completed',
+      progress: 100,
+      results: imageUrls
+    });
 
   } catch (error) {
     console.error(`任务 ${taskId} 处理失败:`, error);
-    const task = tasks.get(taskId);
-    if (task) {
-      task.status = 'failed';
-      task.error = error instanceof Error ? error.message : '未知错误';
-      tasks.set(taskId, task);
-    }
+    await taskManager.updateTask(taskId, {
+      status: 'failed',
+      error_message: error instanceof Error ? error.message : '未知错误'
+    });
   }
 }
 
@@ -118,7 +90,7 @@ async function processImageGeneration(taskId: string, prompt: string, imageFile?
 export async function POST(req: NextRequest) {
   try {
     // 清理过期任务
-    cleanupExpiredTasks();
+    await taskManager.cleanupExpiredTasks();
 
     const contentType = req.headers.get('content-type') || '';
     let prompt = '';
@@ -147,16 +119,11 @@ export async function POST(req: NextRequest) {
 
     // 创建新任务
     const taskId = randomUUID();
-    const task = {
-      id: taskId,
-      status: 'pending' as const,
-      progress: 0,
+    await taskManager.createTask({
+      task_id: taskId,
       prompt,
-      imageFile: imageFile?.name,
-      createdAt: Date.now()
-    };
-
-    tasks.set(taskId, task);
+      image_file_name: imageFile?.name
+    });
 
     // 异步开始处理（不等待完成）
     processImageGeneration(taskId, prompt, imageFile).catch(console.error);
@@ -192,7 +159,7 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    const task = tasks.get(taskId);
+    const task = await taskManager.getTask(taskId);
     if (!task) {
       return NextResponse.json(
         { error: '任务不存在或已过期' },
@@ -201,14 +168,14 @@ export async function GET(req: NextRequest) {
     }
 
     return NextResponse.json({
-      taskId: task.id,
+      taskId: task.task_id,
       status: task.status,
       progress: task.progress,
       ...(task.status === 'completed' && {
         results: task.results
       }),
       ...(task.status === 'failed' && {
-        error: task.error
+        error: task.error_message
       })
     });
 
