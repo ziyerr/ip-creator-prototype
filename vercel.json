@@ -2,6 +2,9 @@
   "functions": {
     "app/api/generate-image/route.ts": {
       "maxDuration": 30
+    },
+    "app/api/generate-single-image/route.ts": {
+      "maxDuration": 120
     }
   },
   "rewrites": [
@@ -9,5 +12,16 @@
       "source": "/api/(.*)",
       "destination": "/api/$1"
     }
+  ],
+  "headers": [
+    {
+      "source": "/outputs/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=86400"
+        }
+      ]
+    }
   ]
-} 
+}
