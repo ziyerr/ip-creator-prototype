@@ -12,27 +12,37 @@ async function processImageGeneration(taskId: string, prompt: string, imageFile?
     });
 
     const apiKey = process.env.MAQUE_API_KEY;
-    const apiUrl = process.env.MAQUE_API_URL || 'https://ismaque.org/v1/images/edits';
 
     if (!apiKey) {
       throw new Error('API密钥未配置');
     }
 
-    // 准备API请求
+    // 根据是否有图片文件选择不同的API端点和参数
+    let apiUrl: string;
     const apiFormData = new FormData();
-    
+
     if (imageFile) {
-      // 图生图模式
+      // 图生图模式 - 使用图片编辑接口
+      apiUrl = 'https://ismaque.org/v1/images/edits';
+
       const imageBlob = new Blob([await imageFile.arrayBuffer()], { type: imageFile.type });
       apiFormData.append('image', imageBlob, imageFile.name);
-      apiFormData.append('mask', imageBlob, imageFile.name);
+      // 注意：图片编辑接口不需要mask参数，除非要指定编辑区域
+      apiFormData.append('prompt', prompt);
+      apiFormData.append('n', '1');
+      apiFormData.append('size', '1024x1024');
+      apiFormData.append('response_format', 'b64_json');
+      apiFormData.append('model', 'gpt-image-1');
+    } else {
+      // 文生图模式 - 使用图片生成接口
+      apiUrl = 'https://ismaque.org/v1/images/generations';
+
+      apiFormData.append('prompt', prompt);
+      apiFormData.append('n', '1');
+      apiFormData.append('size', '1024x1024');
+      apiFormData.append('response_format', 'b64_json');
+      apiFormData.append('model', 'gpt-image-1');
     }
-    
-    apiFormData.append('prompt', prompt);
-    apiFormData.append('n', '1'); // 每个任务只生成1张图片
-    apiFormData.append('size', '1024x1024');
-    apiFormData.append('response_format', 'b64_json');
-    apiFormData.append('model', 'gpt-image-1');
 
     // 更新进度
     await taskManager.updateTask(taskId, { progress: 30 });

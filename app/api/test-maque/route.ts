@@ -12,7 +12,7 @@ export async function POST(req: NextRequest) {
     }
 
     const apiKey = process.env.MAQUE_API_KEY;
-    const apiUrl = process.env.MAQUE_API_URL || 'https://ismaque.org/v1/images/edits';
+    const apiUrl = 'https://ismaque.org/v1/images/generations'; // 文生图接口
 
     if (!apiKey) {
       return NextResponse.json(
