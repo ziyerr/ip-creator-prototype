@@ -9,6 +9,9 @@
     "app/api/tasks/submit/route.ts": {
       "maxDuration": 60
     },
+    "app/api/tasks/submit-async/route.ts": {
+      "maxDuration": 60
+    },
     "app/api/checkImageStatus/route.ts": {
       "maxDuration": 5
     }
