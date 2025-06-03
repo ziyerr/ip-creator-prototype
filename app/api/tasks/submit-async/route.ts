@@ -29,7 +29,7 @@ async function processImageGeneration(taskId: string, prompt: string, imageFile?
     }
     
     apiFormData.append('prompt', prompt);
-    apiFormData.append('n', '3');
+    apiFormData.append('n', '1'); // 每个任务只生成1张图片
     apiFormData.append('size', '1024x1024');
     apiFormData.append('response_format', 'b64_json');
     apiFormData.append('model', 'gpt-image-1');
@@ -55,26 +55,26 @@ async function processImageGeneration(taskId: string, prompt: string, imageFile?
 
     const result = await response.json();
     
-    // 提取图片数据并转换为data URL
-    const imageUrls = result.data?.map((item: any) => {
-      if (item.b64_json) {
-        return `data:image/png;base64,${item.b64_json}`;
-      } else if (item.url) {
-        return item.url;
-      } else {
-        throw new Error(`图片数据格式错误`);
-      }
-    }) || [];
-
-    if (imageUrls.length === 0) {
+    // 提取图片数据并转换为data URL（单张图片）
+    const imageData = result.data?.[0];
+    if (!imageData) {
       throw new Error('API返回的数据中没有图片数据');
+    }
+
+    let imageUrl: string;
+    if (imageData.b64_json) {
+      imageUrl = `data:image/png;base64,${imageData.b64_json}`;
+    } else if (imageData.url) {
+      imageUrl = imageData.url;
+    } else {
+      throw new Error('图片数据格式错误');
     }
 
     // 任务完成
     await taskManager.updateTask(taskId, {
       status: 'completed',
       progress: 100,
-      results: imageUrls
+      results: [imageUrl] // 单张图片的数组
     });
 
   } catch (error) {

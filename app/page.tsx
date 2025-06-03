@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation"
 import { Sparkles, Menu, Upload, X, Zap, Palette, Cpu, ArrowRight, Trash2 } from "lucide-react"
 import { generateImageWithReference, generateImageAsync, generateImageWithClientAsync } from "@/lib/api"
 import { vercelPollingManager, VercelJob } from "@/lib/vercel-polling-manager"
+import { multiTaskManager } from "@/lib/multi-task-manager"
 
 interface StyleOption {
   id: string
@@ -35,6 +36,15 @@ export default function HomePage() {
   // Vercel轮询相关状态
   const [currentJobId, setCurrentJobId] = useState<string | null>(null)
   const [vercelJob, setVercelJob] = useState<VercelJob | null>(null)
+
+  // 多任务状态
+  const [taskProgress, setTaskProgress] = useState<Array<{
+    taskIndex: number;
+    status: string;
+    progress: number;
+    result?: string;
+  }>>([])
+  const [activeTaskIds, setActiveTaskIds] = useState<string[]>([])
 
   const router = useRouter()
 
@@ -89,12 +99,13 @@ export default function HomePage() {
     }
   }, [checkStorageUsage, clearStorage]);
 
-  // 组件卸载时清理Vercel轮询
+  // 组件卸载时清理轮询
   useEffect(() => {
     return () => {
       if (currentJobId) {
         vercelPollingManager.stopPolling(currentJobId);
       }
+      multiTaskManager.stopAllTasks();
     };
   }, [currentJobId]);
 
@@ -178,48 +189,78 @@ export default function HomePage() {
     setGenerationStage("");
     setShowResults(false);
     setGeneratedImages([]);
+    setTaskProgress([]);
 
     try {
-      setGenerationStage("🚀 提交异步任务...");
+      setGenerationStage("🚀 提交3个并行任务...");
       setGenerationProgress(5);
 
       // 构建完整提示词
       const stylePrompt = styleOptions.find(s => s.id === selectedStyle)?.slogan || '';
       const finalPrompt = `${stylePrompt}${customInput ? `, ${customInput}` : ''}`;
 
-      // 调用异步任务API
-      const results = await generateImageAsync(
+      // 初始化任务进度
+      setTaskProgress([
+        { taskIndex: 0, status: 'pending', progress: 0 },
+        { taskIndex: 1, status: 'pending', progress: 0 },
+        { taskIndex: 2, status: 'pending', progress: 0 }
+      ]);
+
+      // 使用多任务管理器
+      const taskIds = await multiTaskManager.submitMultipleTasks(
+        finalPrompt,
+        uploadedImage,
         {
-          prompt: finalPrompt,
-          imageFile: uploadedImage,
-          style: selectedStyle as any,
-          customRequirements: customInput,
-        },
-        ({ progress, message, status }) => {
-          setGenerationProgress(progress || 0);
-          setGenerationStage(message || "");
+          onTaskProgress: (taskIndex, task) => {
+            setTaskProgress(prev => {
+              const newProgress = [...prev];
+              newProgress[taskIndex] = {
+                taskIndex,
+                status: task.status,
+                progress: task.progress,
+                result: task.result
+              };
+              return newProgress;
+            });
+
+            // 更新总体进度
+            const avgProgress = Math.round((taskIndex + 1) * 33.33);
+            setGenerationProgress(Math.min(avgProgress, 90));
+            setGenerationStage(`📊 任务${taskIndex + 1}: ${task.status} ${task.progress}%`);
+          },
+          onAllCompleted: (results) => {
+            console.log('🎉 所有任务完成，结果:', results);
+
+            const imgs = results.map((url, index) => ({
+              id: `generated_${Date.now()}_${index}`,
+              url,
+              style: getStyleLabel(selectedStyle)
+            }));
+
+            setGeneratedImages(imgs);
+            setShowResults(true);
+            setIsGenerating(false);
+            setGenerationProgress(100);
+            setGenerationStage('✅ 所有任务完成！');
+          },
+          onError: (error) => {
+            console.error('❌ 多任务生成失败:', error);
+            setIsGenerating(false);
+            setErrorMessage(error);
+            setGenerationStage('❌ 生成失败');
+          }
         }
       );
 
-      if (results && results.length > 0) {
-        const imgs = results.map((url, index) => ({
-          id: `generated_${Date.now()}_${index}`,
-          url,
-          style: getStyleLabel(selectedStyle)
-        }));
-        setGeneratedImages(imgs);
-        setShowResults(true);
-      } else {
-        throw new Error('没有生成任何图片');
-      }
+      setActiveTaskIds(taskIds);
+      setGenerationStage(`📋 已提交${taskIds.length}个任务，开始生成...`);
 
-      setIsGenerating(false);
     } catch (error: any) {
       setIsGenerating(false);
       const errorMessage = error instanceof Error ? error.message : '未知错误';
       setErrorMessage(errorMessage);
-      setGenerationStage('❌ 生成失败');
-      alert(`提交失败: ${errorMessage}`);
+      setGenerationStage('❌ 提交失败');
+      console.error('提交多任务失败:', error);
     }
   }, [uploadedImage, selectedStyle, customInput]);
 
@@ -522,11 +563,58 @@ export default function HomePage() {
                       <p className="text-red-600 text-base mt-2">{errorMessage}</p>
                     )}
                   </div>
+                  {/* 多任务进度显示 */}
+                  {taskProgress.length > 0 && (
+                    <div className="space-y-3">
+                      <h5 className="font-semibold text-slate-700 mb-3">📋 任务进度详情</h5>
+                      {taskProgress.map((task, index) => (
+                        <div key={index} className="bg-white/80 rounded-xl p-4 border border-slate-200">
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="font-medium text-slate-700">任务 {index + 1}</span>
+                            <span className="text-sm text-slate-500">{task.progress}%</span>
+                          </div>
+                          <div className="w-full bg-slate-200 rounded-full h-2 mb-2">
+                            <div
+                              className={`h-2 rounded-full transition-all duration-300 ${
+                                task.status === 'completed' ? 'bg-green-500' :
+                                task.status === 'failed' ? 'bg-red-500' :
+                                task.status === 'processing' ? 'bg-blue-500' :
+                                'bg-gray-400'
+                              }`}
+                              style={{ width: `${task.progress}%` }}
+                            />
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span className={`text-xs font-medium ${
+                              task.status === 'completed' ? 'text-green-600' :
+                              task.status === 'failed' ? 'text-red-600' :
+                              task.status === 'processing' ? 'text-blue-600' :
+                              'text-gray-600'
+                            }`}>
+                              {task.status === 'pending' && '⏳ 等待中'}
+                              {task.status === 'processing' && '🔄 生成中'}
+                              {task.status === 'completed' && '✅ 已完成'}
+                              {task.status === 'failed' && '❌ 失败'}
+                            </span>
+                            {task.result && (
+                              <span className="text-xs text-green-600">🎨 图片已生成</span>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
                   {/* 预览区域 */}
                   <div className="border-2 border-dashed border-slate-300/80 rounded-2xl p-8 text-center bg-white/60 shadow-inner backdrop-blur">
                     <div className="animate-pulse">
                       <div className="w-56 h-56 bg-slate-200/80 rounded-xl mx-auto mb-4 shadow-lg" />
                       <p className="text-slate-400 text-base">正在生成您的专属IP形象...</p>
+                      {taskProgress.length > 0 && (
+                        <p className="text-slate-500 text-sm mt-2">
+                          已完成 {taskProgress.filter(t => t.status === 'completed').length} / {taskProgress.length} 个任务
+                        </p>
+                      )}
                     </div>
                   </div>
                 </div>
