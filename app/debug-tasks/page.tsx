@@ -6,18 +6,21 @@ import { taskManager } from '@/lib/supabase';
 export default function DebugTasksPage() {
   const [tasks, setTasks] = useState<any[]>([]);
   const [stats, setStats] = useState<any>(null);
+  const [timeoutStats, setTimeoutStats] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
   const loadData = async () => {
     try {
       setLoading(true);
-      const [allTasks, taskStats] = await Promise.all([
+      const [allTasks, taskStats, timeoutStatsData] = await Promise.all([
         taskManager.getAllTasks(20),
-        taskManager.getTaskStats()
+        taskManager.getTaskStats(),
+        taskManager.getTimeoutStats()
       ]);
       setTasks(allTasks);
       setStats(taskStats);
+      setTimeoutStats(timeoutStatsData);
       setError('');
     } catch (err) {
       setError(err instanceof Error ? err.message : '加载失败');
@@ -41,8 +44,11 @@ export default function DebugTasksPage() {
 
   const handleCleanupTasks = async () => {
     try {
-      const deletedCount = await taskManager.cleanupExpiredTasks();
-      alert(`清理了 ${deletedCount} 个过期任务`);
+      const [deletedCount, timeoutCount] = await Promise.all([
+        taskManager.cleanupExpiredTasks(),
+        taskManager.checkTimeoutTasks()
+      ]);
+      alert(`清理了 ${deletedCount} 个过期任务，标记了 ${timeoutCount} 个超时任务`);
       await loadData();
     } catch (err) {
       alert('清理失败: ' + (err instanceof Error ? err.message : '未知错误'));
@@ -114,6 +120,33 @@ export default function DebugTasksPage() {
         </div>
       )}
 
+      {/* 超时统计 */}
+      {timeoutStats && (
+        <div className="bg-orange-50 p-6 rounded-lg shadow-md mb-6">
+          <h3 className="font-semibold mb-4">⏰ 超时统计</h3>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+            <div className="text-center">
+              <div className="text-2xl font-bold text-orange-600">{timeoutStats.totalTimeoutCount}</div>
+              <div className="text-sm text-gray-600">总超时任务</div>
+            </div>
+            <div className="text-center">
+              <div className="text-2xl font-bold text-red-600">{timeoutStats.recentTimeoutCount}</div>
+              <div className="text-sm text-gray-600">24小时内超时</div>
+            </div>
+            <div className="text-center">
+              <div className="text-2xl font-bold text-blue-600">
+                {timeoutStats.avgGenerationTimeSeconds ?
+                  `${Math.round(timeoutStats.avgGenerationTimeSeconds)}s` : 'N/A'}
+              </div>
+              <div className="text-sm text-gray-600">平均生成时间</div>
+            </div>
+          </div>
+          <div className="mt-4 text-xs text-orange-700 bg-orange-100 rounded-lg px-3 py-2">
+            💡 超时阈值：2分钟。超过此时间的processing任务将被自动标记为失败。
+          </div>
+        </div>
+      )}
+
       {/* 任务列表 */}
       <div className="bg-white p-6 rounded-lg shadow-md">
         <h3 className="font-semibold mb-4">📋 最近任务 (最新20个)</h3>
@@ -129,6 +162,7 @@ export default function DebugTasksPage() {
                   <th className="text-left p-2">状态</th>
                   <th className="text-left p-2">进度</th>
                   <th className="text-left p-2">提示词</th>
+                  <th className="text-left p-2">生成时间</th>
                   <th className="text-left p-2">创建时间</th>
                   <th className="text-left p-2">更新时间</th>
                   <th className="text-left p-2">错误信息</th>
@@ -176,6 +210,27 @@ export default function DebugTasksPage() {
                       <div className="truncate" title={task.prompt}>
                         {task.prompt}
                       </div>
+                    </td>
+                    <td className="p-2 text-xs">
+                      {task.generation_started_at && task.generation_completed_at ? (
+                        <div>
+                          <div className="text-green-600 font-medium">
+                            {Math.round((new Date(task.generation_completed_at).getTime() - new Date(task.generation_started_at).getTime()) / 1000)}秒
+                          </div>
+                          {task.is_timeout && (
+                            <div className="text-red-500 text-xs">⏰ 超时</div>
+                          )}
+                        </div>
+                      ) : task.generation_started_at && task.status === 'processing' ? (
+                        <div>
+                          <div className="text-blue-600">
+                            {Math.round((Date.now() - new Date(task.generation_started_at).getTime()) / 1000)}秒
+                          </div>
+                          <div className="text-xs text-gray-500">进行中</div>
+                        </div>
+                      ) : (
+                        <div className="text-gray-400 text-xs">未开始</div>
+                      )}
                     </td>
                     <td className="p-2 text-xs">
                       {new Date(task.created_at).toLocaleString()}

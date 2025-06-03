@@ -23,6 +23,9 @@ export interface ImageTask {
   error_message?: string;
   created_at: string;
   updated_at: string;
+  generation_started_at?: string;
+  generation_completed_at?: string;
+  is_timeout?: boolean;
 }
 
 // 任务管理类
@@ -191,6 +194,133 @@ export class SupabaseTaskManager {
     });
 
     return stats;
+  }
+
+  /**
+   * 检查并标记超时任务（超过2分钟的processing任务）
+   */
+  async checkTimeoutTasks(): Promise<number> {
+    try {
+      const { data, error } = await supabase.rpc('check_task_timeout');
+
+      if (error) {
+        console.error('检查超时任务失败:', error);
+        throw new Error(`检查超时任务失败: ${error.message}`);
+      }
+
+      const timeoutCount = data || 0;
+      if (timeoutCount > 0) {
+        console.log(`⏰ 标记了 ${timeoutCount} 个超时任务`);
+      }
+
+      return timeoutCount;
+    } catch (error) {
+      console.error('检查超时任务异常:', error);
+      return 0;
+    }
+  }
+
+  /**
+   * 获取超时统计信息
+   */
+  async getTimeoutStats(): Promise<{
+    totalTimeoutCount: number;
+    recentTimeoutCount: number;
+    avgGenerationTimeSeconds: number;
+  }> {
+    try {
+      const { data, error } = await supabase.rpc('get_timeout_stats');
+
+      if (error) {
+        console.error('获取超时统计失败:', error);
+        throw new Error(`获取超时统计失败: ${error.message}`);
+      }
+
+      const stats = data?.[0] || {};
+      return {
+        totalTimeoutCount: Number(stats.total_timeout_count || 0),
+        recentTimeoutCount: Number(stats.recent_timeout_count || 0),
+        avgGenerationTimeSeconds: Number(stats.avg_generation_time_seconds || 0)
+      };
+    } catch (error) {
+      console.error('获取超时统计异常:', error);
+      return {
+        totalTimeoutCount: 0,
+        recentTimeoutCount: 0,
+        avgGenerationTimeSeconds: 0
+      };
+    }
+  }
+
+  /**
+   * 标记任务开始生成
+   */
+  async markGenerationStarted(taskId: string): Promise<void> {
+    const { error } = await supabase
+      .from('image_tasks')
+      .update({
+        generation_started_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('task_id', taskId);
+
+    if (error) {
+      console.error('标记生成开始失败:', error);
+      throw new Error(`标记生成开始失败: ${error.message}`);
+    }
+  }
+
+  /**
+   * 标记任务完成生成
+   */
+  async markGenerationCompleted(taskId: string, success: boolean = true): Promise<void> {
+    const updates: any = {
+      generation_completed_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
+    if (!success) {
+      updates.status = 'failed';
+    }
+
+    const { error } = await supabase
+      .from('image_tasks')
+      .update(updates)
+      .eq('task_id', taskId);
+
+    if (error) {
+      console.error('标记生成完成失败:', error);
+      throw new Error(`标记生成完成失败: ${error.message}`);
+    }
+  }
+
+  /**
+   * 检查任务是否超时（基于generation_started_at）
+   */
+  isTaskTimeout(task: ImageTask): boolean {
+    if (!task.generation_started_at || task.status !== 'processing') {
+      return false;
+    }
+
+    const startTime = new Date(task.generation_started_at);
+    const now = new Date();
+    const diffMinutes = (now.getTime() - startTime.getTime()) / (1000 * 60);
+
+    return diffMinutes > 2; // 超过2分钟视为超时
+  }
+
+  /**
+   * 获取任务的生成时间（秒）
+   */
+  getGenerationTime(task: ImageTask): number | null {
+    if (!task.generation_started_at || !task.generation_completed_at) {
+      return null;
+    }
+
+    const startTime = new Date(task.generation_started_at);
+    const endTime = new Date(task.generation_completed_at);
+
+    return (endTime.getTime() - startTime.getTime()) / 1000;
   }
 }
 

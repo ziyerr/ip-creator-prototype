@@ -44,8 +44,11 @@ async function processImageGeneration(taskId: string, prompt: string, imageFile?
       apiFormData.append('model', 'gpt-image-1');
     }
 
-    // 更新进度
+    // 更新进度并标记开始生成
     await taskManager.updateTask(taskId, { progress: 30 });
+    await taskManager.markGenerationStarted(taskId);
+
+    console.log(`🚀 开始调用麻雀API生成图片，任务ID: ${taskId}`);
 
     // 调用麻雀API
     const response = await fetch(apiUrl, {
@@ -80,27 +83,34 @@ async function processImageGeneration(taskId: string, prompt: string, imageFile?
       throw new Error('图片数据格式错误');
     }
 
-    // 任务完成
+    // 任务完成 - 标记完成时间
     await taskManager.updateTask(taskId, {
       status: 'completed',
       progress: 100,
       results: [imageUrl] // 单张图片的数组
     });
+    await taskManager.markGenerationCompleted(taskId, true);
+
+    console.log(`✅ 任务 ${taskId} 生成完成，图片URL: ${imageUrl.substring(0, 100)}...`);
 
   } catch (error) {
-    console.error(`任务 ${taskId} 处理失败:`, error);
+    console.error(`❌ 任务 ${taskId} 处理失败:`, error);
+
+    // 任务失败 - 标记完成时间
     await taskManager.updateTask(taskId, {
       status: 'failed',
       error_message: error instanceof Error ? error.message : '未知错误'
     });
+    await taskManager.markGenerationCompleted(taskId, false);
   }
 }
 
 // POST - 提交异步任务
 export async function POST(req: NextRequest) {
   try {
-    // 清理过期任务
+    // 清理过期任务和检查超时任务
     await taskManager.cleanupExpiredTasks();
+    await taskManager.checkTimeoutTasks();
 
     const contentType = req.headers.get('content-type') || '';
     let prompt = '';
