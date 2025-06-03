@@ -241,7 +241,17 @@ async function processImageTask(
 
         if (!response.ok) {
           const errorText = await response.text();
-          throw new Error(`API请求失败 (${response.status}): ${errorText}`);
+          let errorData;
+          try {
+            errorData = JSON.parse(errorText);
+          } catch {
+            errorData = { error: { message: errorText } };
+          }
+          // 直接返回JSON，不抛出异常
+          task.status = 'failed';
+          task.error = errorData.error?.message || errorText;
+          task.updatedAt = Date.now();
+          return;
         }
 
         const data = await response.json();

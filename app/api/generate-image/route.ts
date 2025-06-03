@@ -113,22 +113,17 @@ export async function POST(req: NextRequest) {
           if (!response.ok) {
             const errorText = await response.text();
             console.error(`第${i + 1}张图片API错误:`, errorText);
-            
             let errorData;
             try {
               errorData = JSON.parse(errorText);
             } catch {
               errorData = { error: { message: errorText } };
             }
-            
-            // 直接抛出错误，不使用演示模式
-            if (response.status === 401) {
-              throw new Error(`API认证失败: ${errorData.error?.message || 'Invalid API Key'} - 请检查MAQUE_API_KEY环境变量`);
-            } else if (response.status === 404) {
-              throw new Error(`API端点不存在: ${apiUrl} - 请确认麻雀API地址是否正确`);
-            } else {
-              throw new Error(`API错误 (${response.status}): ${errorData.error?.message || errorText}`);
-            }
+            // 直接返回JSON，不抛出异常
+            return Response.json({
+              error: `外部API错误: ${response.status}`,
+              details: errorData.error?.message || errorText
+            }, { status: response.status });
           }
           
           const result = await response.json();
@@ -159,20 +154,22 @@ export async function POST(req: NextRequest) {
           
         } catch (error: any) {
           console.error(`⚠️ 第${i + 1}张图片生成失败 (尝试 ${retry + 1}/${maxRetries + 1}):`, error.message);
-          
           if (error.name === 'AbortError') {
             console.log('🕐 请求被取消（可能是超时）');
           }
-          
           if (retry === maxRetries) {
             failedCount++;
             console.error(`❌ 第${i + 1}张图片完全失败:`, error.message);
-            // 第一张图片失败时立即抛出错误
+            // 第一张图片失败时立即返回JSON
             if (i === 0) {
-              throw error;
+              return Response.json({
+                error: '图片生成失败',
+                details: error instanceof Error ? error.message : String(error),
+                runtime: 'nodejs',
+                model: 'gpt-image-1'
+              }, { status: 500 });
             }
           } else {
-            // 等待后重试
             await new Promise(resolve => setTimeout(resolve, 1000));
           }
         }

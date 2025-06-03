@@ -179,8 +179,16 @@ async function processImageGenerationTask(taskId: string, prompt: string, imageF
 
         if (!response.ok) {
           const errorText = await response.text();
-          console.error(`第${i + 1}张图片API错误:`, response.status, errorText);
-          throw new Error(`第${i + 1}张图片API调用失败: ${response.status} - ${errorText}`);
+          let errorData;
+          try {
+            errorData = JSON.parse(errorText);
+          } catch {
+            errorData = { error: { message: errorText } };
+          }
+          // 直接返回JSON，不抛出异常
+          task.status = 'failed';
+          task.error = errorData.error?.message || errorText;
+          return;
         }
 
         const data = await response.json();

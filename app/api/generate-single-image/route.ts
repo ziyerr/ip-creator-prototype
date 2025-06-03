@@ -236,27 +236,17 @@ export async function POST(req: NextRequest) {
         if (!response.ok) {
           const errorText = await response.text();
           console.error('API错误响应:', errorText);
-
           let errorData;
           try {
             errorData = JSON.parse(errorText);
           } catch {
             errorData = { error: { message: errorText } };
           }
-
-          // 根据错误类型决定是否重试
-          if (response.status === 401) {
-            throw new Error(`API认证失败: ${errorData.error?.message || 'Invalid API Key'} - 请检查MAQUE_API_KEY环境变量`);
-          } else if (response.status === 404) {
-            throw new Error(`API端点不存在: ${apiUrl} - 请确认麻雀API地址是否正确`);
-          } else if (response.status >= 500 && retryCount < maxRetries) {
-            // 服务器错误，可以重试
-            lastError = new Error(`服务器错误 (${response.status}): ${errorData.error?.message || errorText}`);
-            console.warn(`⚠️ 服务器错误，将重试... (${retryCount + 1}/${maxRetries + 1})`);
-            continue;
-          } else {
-            throw new Error(`API请求失败 (${response.status}): ${errorData.error?.message || errorText}`);
-          }
+          // 直接返回JSON，不抛出异常
+          return Response.json({
+            error: `外部API错误: ${response.status}`,
+            details: errorData.error?.message || errorText
+          }, { status: response.status });
         }
 
         // 请求成功，处理响应
@@ -339,11 +329,14 @@ export async function POST(req: NextRequest) {
 
       } catch (error: any) {
         lastError = error;
-
-        // 检查是否是网络连接错误
         if (error.name === 'AbortError') {
           console.error('API调用超时');
-          throw new Error('图片生成超时（55秒），请稍后重试');
+          return Response.json({
+            error: '图片生成超时（55秒），请稍后重试',
+            details: error instanceof Error ? error.message : String(error),
+            runtime: 'nodejs',
+            model: 'gpt-image-1'
+          }, { status: 504 });
         } else if (error.message.includes('Failed to fetch') || error.message.includes('ECONNREFUSED') || error.message.includes('ENOTFOUND')) {
           if (retryCount < maxRetries) {
             console.warn(`🌐 网络连接失败，将重试... (${retryCount + 1}/${maxRetries + 1})`);
@@ -354,12 +347,22 @@ export async function POST(req: NextRequest) {
             console.error(`🔍 最终网络错误: ${error.message}`);
             console.error(`🔍 API端点: ${apiUrl}`);
             console.error(`🔍 API密钥前缀: ${apiKey.substring(0, 8)}...`);
-            throw new Error(`网络连接失败: 无法连接到麻雀API服务器 (${apiUrl}). 错误: ${error.message}`);
+            return Response.json({
+              error: `网络连接失败: 无法连接到麻雀API服务器 (${apiUrl})`,
+              details: error instanceof Error ? error.message : String(error),
+              runtime: 'nodejs',
+              model: 'gpt-image-1'
+            }, { status: 502 });
           }
         } else {
-          // 其他错误直接抛出
+          // 其他错误直接返回JSON
           console.error(`🔍 未知错误类型: ${error.name} - ${error.message}`);
-          throw error;
+          return Response.json({
+            error: '图片生成失败',
+            details: error instanceof Error ? error.message : String(error),
+            runtime: 'nodejs',
+            model: 'gpt-image-1'
+          }, { status: 500 });
         }
       }
     }
