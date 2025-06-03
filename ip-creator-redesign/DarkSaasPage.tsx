@@ -26,8 +26,8 @@ export default function DarkSaasPage() {
     setResultUrl(null);
     setError(null);
     try {
-      const url = await generateImageWithReference({ prompt, imageFile: uploadedImage });
-      setResultUrl(url);
+      const urls = await generateImageWithReference({ prompt, imageFile: uploadedImage, style: 'cute' });
+      setResultUrl(urls[0]); // 使用第一张图片
     } catch (err) {
       setError((err as any).message || '生成失败');
     }

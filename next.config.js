@@ -28,11 +28,8 @@ const nextConfig = {
     ]
   },
   
-  // 实验性功能
-  experimental: {
-    // 启用服务端组件
-    serverComponentsExternalPackages: [],
-  },
+  // 服务端外部包配置
+  serverExternalPackages: [],
   
   // 输出配置
   output: 'standalone',

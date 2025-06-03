@@ -24,8 +24,6 @@ export default function TestApiPage() {
         prompt: 'Q版可爱风格，卡通头像，圆润比例，大眼睛，明快配色，可爱表情，二次元风格',
         imageFile: testImageFile,
         style: 'cute'
-      }, (status) => {
-        console.log('任务状态更新:', status)
       })
       
       console.log('API测试成功，生成的图片URLs:', imageUrls)
