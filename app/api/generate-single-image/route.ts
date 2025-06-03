@@ -31,6 +31,8 @@ async function cleanupOldFiles(outputDir: string) {
   }
 }
 
+
+
 export async function POST(req: NextRequest) {
   try {
     console.log('=== 单图片生成API (Node.js Runtime) ===');
@@ -57,6 +59,16 @@ export async function POST(req: NextRequest) {
       hasText: typeof imageFile.text === 'function',
       constructor: imageFile.constructor.name
     });
+
+    // 🔍 环境诊断信息
+    console.log('🔍 环境诊断信息:');
+    console.log(`  - Node.js版本: ${process.version}`);
+    console.log(`  - 运行环境: ${process.env.NODE_ENV || 'development'}`);
+    console.log(`  - Vercel环境: ${process.env.VERCEL ? 'true' : 'false'}`);
+    console.log(`  - API端点: ${apiUrl}`);
+    console.log(`  - API密钥前缀: ${apiKey.substring(0, 8)}...`);
+    console.log(`  - 当前时间: ${new Date().toISOString()}`);
+    console.log(`  - 内存使用: ${Math.round(process.memoryUsage().heapUsed / 1024 / 1024)}MB`);
 
     // 🎨 为每张图片添加独特的变化指令
     const variationPrompts = [
@@ -183,132 +195,178 @@ export async function POST(req: NextRequest) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 120000);
     
-    try {
-      const response = await fetch(apiUrl, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${apiKey}`,
-          'User-Agent': 'IP-Creator/1.0',
-          'Accept': 'application/json'
-        },
-        body: apiFormData,
-        signal: controller.signal
-      });
-      
-      clearTimeout(timeoutId);
-      
-      console.log('API响应状态:', response.status);
-      
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('API错误响应:', errorText);
-        
-        let errorData;
-        try {
-          errorData = JSON.parse(errorText);
-        } catch {
-          errorData = { error: { message: errorText } };
+    // 🔄 添加重试机制
+    let lastError: Error | null = null;
+    const maxRetries = 3;
+
+    for (let retryCount = 0; retryCount <= maxRetries; retryCount++) {
+      try {
+        if (retryCount > 0) {
+          console.log(`🔄 第 ${retryCount} 次重试 API 调用...`);
+          // 重试前等待递增时间
+          await new Promise(resolve => setTimeout(resolve, retryCount * 2000));
         }
-        
-        // 直接抛出错误，不使用演示模式
-        if (response.status === 401) {
-          throw new Error(`API认证失败: ${errorData.error?.message || 'Invalid API Key'} - 请检查MAQUE_API_KEY环境变量`);
-        } else if (response.status === 404) {
-          throw new Error(`API端点不存在: ${apiUrl} - 请确认麻雀API地址是否正确`);
-        } else {
-          throw new Error(`API请求失败 (${response.status}): ${errorData.error?.message || errorText}`);
-        }
-      }
-      
-      const result = await response.json();
-      console.log('API响应数据:', JSON.stringify(result).substring(0, 200));
-      
-      // 解析响应并保存图片文件
-      let imageUrl = '';
-      let base64Data = '';
 
-      if (result.data && result.data[0]) {
-        if (result.data[0].url && result.data[0].url.startsWith('http')) {
-          // 如果返回的是真实URL，直接使用
-          imageUrl = result.data[0].url;
-        } else {
-          // 如果返回的是base64，保存为文件
-          base64Data = result.data[0].b64_json || result.data[0].url || '';
-        }
-      } else if (result.url && result.url.startsWith('http')) {
-        imageUrl = result.url;
-      } else if (result.images && result.images[0]) {
-        base64Data = result.images[0];
-      }
+        const response = await fetch(apiUrl, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${apiKey}`,
+            'User-Agent': 'IP-Creator/1.0',
+            'Accept': 'application/json',
+            'Connection': 'keep-alive'
+          },
+          body: apiFormData,
+          signal: controller.signal
+        });
 
-      // 🎯 如果有base64数据，保存为文件
-      if (base64Data && !imageUrl) {
-        try {
-          // 清理base64数据（移除data:image/png;base64,前缀）
-          const cleanBase64 = base64Data.replace(/^data:image\/[a-z]+;base64,/, '');
+        clearTimeout(timeoutId);
 
-          // 生成唯一文件名
-          const timestamp = Date.now();
-          const randomId = Math.random().toString(36).substring(2, 8);
-          const fileName = `generated_${timestamp}_${randomId}.png`;
+        console.log('API响应状态:', response.status);
 
-          // 确保输出目录存在
-          const outputDir = join(process.cwd(), 'public', 'outputs');
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error('API错误响应:', errorText);
+
+          let errorData;
           try {
-            await mkdir(outputDir, { recursive: true });
-          } catch (mkdirError) {
-            // 目录可能已存在，忽略错误
+            errorData = JSON.parse(errorText);
+          } catch {
+            errorData = { error: { message: errorText } };
           }
 
-          // 🧹 清理旧文件（异步执行，不阻塞当前请求）
-          cleanupOldFiles(outputDir).catch(console.warn);
+          // 根据错误类型决定是否重试
+          if (response.status === 401) {
+            throw new Error(`API认证失败: ${errorData.error?.message || 'Invalid API Key'} - 请检查MAQUE_API_KEY环境变量`);
+          } else if (response.status === 404) {
+            throw new Error(`API端点不存在: ${apiUrl} - 请确认麻雀API地址是否正确`);
+          } else if (response.status >= 500 && retryCount < maxRetries) {
+            // 服务器错误，可以重试
+            lastError = new Error(`服务器错误 (${response.status}): ${errorData.error?.message || errorText}`);
+            console.warn(`⚠️ 服务器错误，将重试... (${retryCount + 1}/${maxRetries + 1})`);
+            continue;
+          } else {
+            throw new Error(`API请求失败 (${response.status}): ${errorData.error?.message || errorText}`);
+          }
+        }
 
-          // 保存文件
-          const filePath = join(outputDir, fileName);
-          const imageBuffer = Buffer.from(cleanBase64, 'base64');
-          await writeFile(filePath, imageBuffer);
+        // 请求成功，处理响应
+        const result = await response.json();
+        console.log('API响应数据:', JSON.stringify(result).substring(0, 200));
 
-          // 生成可访问的URL
-          imageUrl = `/outputs/${fileName}`;
+        // 解析响应并保存图片文件
+        let imageUrl = '';
+        let base64Data = '';
 
-          console.log(`💾 图片已保存: ${fileName} (${(imageBuffer.length / 1024).toFixed(1)}KB)`);
+        if (result.data && result.data[0]) {
+          if (result.data[0].url && result.data[0].url.startsWith('http')) {
+            // 如果返回的是真实URL，直接使用
+            imageUrl = result.data[0].url;
+          } else {
+            // 如果返回的是base64，保存为文件
+            base64Data = result.data[0].b64_json || result.data[0].url || '';
+          }
+        } else if (result.url && result.url.startsWith('http')) {
+          imageUrl = result.url;
+        } else if (result.images && result.images[0]) {
+          base64Data = result.images[0];
+        }
 
-        } catch (saveError) {
-          console.error('保存图片文件失败:', saveError);
-          // 如果保存失败，回退到data URL
-          imageUrl = `data:image/png;base64,${base64Data}`;
+        // 🎯 如果有base64数据，保存为文件
+        if (base64Data && !imageUrl) {
+          try {
+            // 清理base64数据（移除data:image/png;base64,前缀）
+            const cleanBase64 = base64Data.replace(/^data:image\/[a-z]+;base64,/, '');
+
+            // 生成唯一文件名
+            const timestamp = Date.now();
+            const randomId = Math.random().toString(36).substring(2, 8);
+            const fileName = `generated_${timestamp}_${randomId}.png`;
+
+            // 确保输出目录存在
+            const outputDir = join(process.cwd(), 'public', 'outputs');
+            try {
+              await mkdir(outputDir, { recursive: true });
+            } catch (mkdirError) {
+              // 目录可能已存在，忽略错误
+            }
+
+            // 🧹 清理旧文件（异步执行，不阻塞当前请求）
+            cleanupOldFiles(outputDir).catch(console.warn);
+
+            // 保存文件
+            const filePath = join(outputDir, fileName);
+            const imageBuffer = Buffer.from(cleanBase64, 'base64');
+            await writeFile(filePath, imageBuffer);
+
+            // 生成可访问的URL
+            imageUrl = `/outputs/${fileName}`;
+
+            console.log(`💾 图片已保存: ${fileName} (${(imageBuffer.length / 1024).toFixed(1)}KB)`);
+
+          } catch (saveError) {
+            console.error('保存图片文件失败:', saveError);
+            // 如果保存失败，回退到data URL
+            imageUrl = `data:image/png;base64,${base64Data}`;
+          }
+        }
+
+        if (!imageUrl) {
+          throw new Error(`API响应中未找到图片数据: ${JSON.stringify(result)}`);
+        }
+
+        console.log(`✅ 图片生成成功: ${imageUrl}`);
+
+        return Response.json({
+          success: true,
+          url: imageUrl,
+          message: `图片生成成功 - 变化${variationIndex + 1}`,
+          model: result.model || 'gpt-image-1',
+          size: result.size || '512x512',
+          runtime: 'nodejs',
+          variation: `variation_${variationIndex + 1}`,
+          variationIndex: variationIndex + 1
+        });
+
+      } catch (error: any) {
+
+      } catch (error: any) {
+        lastError = error;
+
+        // 检查是否是网络连接错误
+        if (error.name === 'AbortError') {
+          console.error('API调用超时');
+          throw new Error('图片生成超时（120秒），请稍后重试');
+        } else if (error.message.includes('Failed to fetch') || error.message.includes('ECONNREFUSED') || error.message.includes('ENOTFOUND')) {
+          if (retryCount < maxRetries) {
+            console.warn(`🌐 网络连接失败，将重试... (${retryCount + 1}/${maxRetries + 1})`);
+            console.error(`🔍 网络错误详情: ${error.message}`);
+            continue;
+          } else {
+            console.error('🌐 网络连接持续失败，所有重试已用尽');
+            console.error(`🔍 最终网络错误: ${error.message}`);
+            console.error(`🔍 API端点: ${apiUrl}`);
+            console.error(`🔍 API密钥前缀: ${apiKey.substring(0, 8)}...`);
+            throw new Error(`网络连接失败: 无法连接到麻雀API服务器 (${apiUrl}). 错误: ${error.message}`);
+          }
+        } else {
+          // 其他错误直接抛出
+          console.error(`🔍 未知错误类型: ${error.name} - ${error.message}`);
+          throw error;
         }
       }
-
-      if (!imageUrl) {
-        throw new Error(`API响应中未找到图片数据: ${JSON.stringify(result)}`);
-      }
-      
-      console.log(`✅ 图片生成成功，变化${variationIndex + 1}`);
-      
-      // 返回成功结果
-      return Response.json({
-        success: true,
-        url: imageUrl,
-        message: `图片生成成功 - 变化${variationIndex + 1}`,
-        model: 'gpt-image-1',
-        size: '512x512',
-        runtime: 'nodejs',
-        variation: selectedVariation,
-        variationIndex: variationIndex + 1,
-        mode: 'api'
-      });
-      
-    } catch (error: any) {
-      clearTimeout(timeoutId);
-      
-      if (error.name === 'AbortError') {
-        console.error('API调用超时');
-        throw new Error('图片生成超时（120秒），请稍后重试');
-      }
-      
-      throw error;
     }
+
+    // 如果所有重试都失败了
+    if (lastError) {
+      console.error('🌐 API调用完全失败，抛出最后的错误');
+      console.error(`🔍 最终错误详情: ${lastError.message}`);
+      console.error(`🔍 错误堆栈: ${lastError.stack}`);
+      throw lastError;
+    }
+
+    // 如果代码执行到这里，说明重试循环成功完成
+    console.error('🚨 代码逻辑错误：重试循环应该已经返回结果或抛出错误');
+    throw new Error('内部逻辑错误：未能正确处理API响应');
 
   } catch (error) {
     console.error('图片生成失败:', error);
