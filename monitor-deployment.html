@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>部署监控器</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        .container {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 30px;
+            border-radius: 15px;
+            backdrop-filter: blur(10px);
+        }
+        .status {
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 8px;
+            font-weight: bold;
+        }
+        .success { background: rgba(34, 197, 94, 0.2); border: 2px solid #22c55e; }
+        .warning { background: rgba(251, 191, 36, 0.2); border: 2px solid #fbbf24; }
+        .error { background: rgba(239, 68, 68, 0.2); border: 2px solid #ef4444; }
+        .info { background: rgba(59, 130, 246, 0.2); border: 2px solid #3b82f6; }
+        button {
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: bold;
+            margin: 5px;
+            transition: transform 0.2s;
+        }
+        button:hover {
+            transform: translateY(-2px);
+        }
+        .monitoring-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }
+        .monitoring-item {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 15px;
+            border-radius: 8px;
+        }
+        .monitoring-item h4 {
+            margin-top: 0;
+            color: #fbbf24;
+        }
+        .metric {
+            font-size: 14px;
+            margin: 5px 0;
+        }
+        .metric-value {
+            color: #60a5fa;
+            font-weight: bold;
+        }
+        .progress-bar {
+            width: 100%;
+            height: 20px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            overflow: hidden;
+            margin: 10px 0;
+        }
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(45deg, #22c55e, #16a34a);
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+        .comparison {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin: 20px 0;
+        }
+        .comparison-item {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 15px;
+            border-radius: 8px;
+        }
+        .old-version { border-left: 4px solid #ef4444; }
+        .new-version { border-left: 4px solid #22c55e; }
+        .test-results {
+            max-height: 400px;
+            overflow-y: auto;
+            background: rgba(0, 0, 0, 0.2);
+            padding: 15px;
+            border-radius: 8px;
+            margin: 15px 0;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📡 部署监控器</h1>
+        
+        <div class="status info">
+            <strong>🎯 监控目标:</strong> 检测生产环境是否已更新到最新版本<br>
+            <strong>⏰ 强制部署时间:</strong> <span id="deployTime">刚刚触发</span><br>
+            <strong>🔍 检测方法:</strong> 检查UI界面变化和API响应
+        </div>
+
+        <div class="comparison">
+            <div class="comparison-item old-version">
+                <h4>❌ 旧版本特征</h4>
+                <p>• 4个生成模式选项<br>
+                • 前端异步模式<br>
+                • Edge Runtime模式<br>
+                • 智能模式<br>
+                • 服务器异步模式</p>
+            </div>
+            
+            <div class="comparison-item new-version">
+                <h4>✅ 新版本特征</h4>
+                <p>• 简化的智能生成模式<br>
+                • 并行生成3张独特图片<br>
+                • 40-60秒完成<br>
+                • 实时进度反馈<br>
+                • 快速连接 ✓ 高质量成功 ✓ 实时反馈 ✓</p>
+            </div>
+        </div>
+
+        <div class="monitoring-grid">
+            <div class="monitoring-item">
+                <h4>🌐 部署状态</h4>
+                <div class="progress-bar">
+                    <div class="progress-fill" id="deployProgress"></div>
+                </div>
+                <div class="metric">状态: <span class="metric-value" id="deployStatus">检查中...</span></div>
+                <div class="metric">进度: <span class="metric-value" id="deployPercent">0%</span></div>
+                <div class="metric">预计完成: <span class="metric-value" id="estimatedTime">2-3分钟</span></div>
+            </div>
+            
+            <div class="monitoring-item">
+                <h4>🔍 版本检测</h4>
+                <div class="metric">UI版本: <span class="metric-value" id="uiVersion">检测中...</span></div>
+                <div class="metric">生成模式: <span class="metric-value" id="generationMode">-</span></div>
+                <div class="metric">界面特征: <span class="metric-value" id="uiFeatures">-</span></div>
+            </div>
+            
+            <div class="monitoring-item">
+                <h4>⚡ 响应性能</h4>
+                <div class="metric">响应时间: <span class="metric-value" id="responseTime">-</span></div>
+                <div class="metric">可访问性: <span class="metric-value" id="accessibility">-</span></div>
+                <div class="metric">缓存状态: <span class="metric-value" id="cacheStatus">-</span></div>
+            </div>
+            
+            <div class="monitoring-item">
+                <h4>📊 监控统计</h4>
+                <div class="metric">检查次数: <span class="metric-value" id="checkCount">0</span></div>
+                <div class="metric">版本匹配: <span class="metric-value" id="versionMatch">未知</span></div>
+                <div class="metric">最后检查: <span class="metric-value" id="lastCheck">-</span></div>
+            </div>
+        </div>
+
+        <div>
+            <button onclick="checkDeployment()">🔍 立即检查</button>
+            <button onclick="startAutoMonitoring()">🔄 自动监控</button>
+            <button onclick="stopAutoMonitoring()">⏹️ 停止监控</button>
+            <button onclick="openProductionSite()">🌐 打开生产网站</button>
+            <button onclick="clearResults()">🧹 清理日志</button>
+        </div>
+
+        <div class="test-results" id="testResults"></div>
+    </div>
+
+    <script>
+        const PROD_URL = 'https://ip-creator-ziyerrs-projects.vercel.app';
+        let monitoringInterval = null;
+        let checkCounter = 0;
+        let deploymentStartTime = Date.now();
+
+        function log(message, type = 'info') {
+            const results = document.getElementById('testResults');
+            const div = document.createElement('div');
+            div.className = `status ${type}`;
+            div.innerHTML = `<strong>${new Date().toLocaleTimeString()}:</strong> ${message}`;
+            results.appendChild(div);
+            results.scrollTop = results.scrollHeight;
+        }
+
+        function updateMetric(id, value) {
+            const element = document.getElementById(id);
+            if (element) {
+                element.textContent = value;
+            }
+        }
+
+        function updateProgress(percent) {
+            document.getElementById('deployProgress').style.width = percent + '%';
+            updateMetric('deployPercent', percent + '%');
+        }
+
+        async function checkDeployment() {
+            checkCounter++;
+            updateMetric('checkCount', checkCounter);
+            updateMetric('lastCheck', new Date().toLocaleTimeString());
+            
+            log(`🔍 第 ${checkCounter} 次检查部署状态...`, 'info');
+            
+            try {
+                const startTime = Date.now();
+                const response = await fetch(PROD_URL, { 
+                    cache: 'no-cache',
+                    headers: {
+                        'Cache-Control': 'no-cache, no-store, must-revalidate',
+                        'Pragma': 'no-cache',
+                        'Expires': '0'
+                    }
+                });
+                const endTime = Date.now();
+                const responseTime = endTime - startTime;
+                
+                updateMetric('responseTime', `${responseTime}ms`);
+                
+                if (response.ok) {
+                    updateMetric('accessibility', '在线');
+                    
+                    const html = await response.text();
+                    
+                    // 检查版本特征
+                    const hasOldFeatures = html.includes('前端异步模式') && 
+                                         html.includes('Edge Runtime模式') && 
+                                         html.includes('智能模式') && 
+                                         html.includes('服务器异步模式');
+                    
+                    const hasNewFeatures = html.includes('智能生成模式') && 
+                                         html.includes('并行生成3张独特图片') && 
+                                         html.includes('40-60秒完成') &&
+                                         html.includes('快速连接') &&
+                                         html.includes('高质量成功') &&
+                                         html.includes('实时反馈');
+                    
+                    if (hasNewFeatures && !hasOldFeatures) {
+                        // 新版本已部署
+                        updateMetric('uiVersion', '新版本 ✅');
+                        updateMetric('generationMode', '智能生成模式');
+                        updateMetric('uiFeatures', '简化界面');
+                        updateMetric('versionMatch', '匹配 ✅');
+                        updateMetric('deployStatus', '部署完成');
+                        updateProgress(100);
+                        
+                        log('🎉 部署成功！新版本已生效', 'success');
+                        log('✅ 检测到新版本特征：智能生成模式界面', 'success');
+                        
+                        if (monitoringInterval) {
+                            stopAutoMonitoring();
+                            log('🔄 自动监控已停止（检测到新版本）', 'info');
+                        }
+                        
+                    } else if (hasOldFeatures && !hasNewFeatures) {
+                        // 仍是旧版本
+                        updateMetric('uiVersion', '旧版本 ⏳');
+                        updateMetric('generationMode', '4种模式选项');
+                        updateMetric('uiFeatures', '复杂界面');
+                        updateMetric('versionMatch', '不匹配 ⏳');
+                        
+                        const elapsedTime = Date.now() - deploymentStartTime;
+                        const elapsedMinutes = Math.floor(elapsedTime / 60000);
+                        
+                        if (elapsedMinutes < 3) {
+                            updateMetric('deployStatus', '部署中...');
+                            updateProgress(Math.min(90, (elapsedTime / 180000) * 100)); // 3分钟内渐进到90%
+                            log('⏳ 仍显示旧版本，继续等待部署...', 'warning');
+                        } else {
+                            updateMetric('deployStatus', '部署延迟');
+                            updateProgress(95);
+                            log('⚠️ 部署时间超过预期，可能需要手动检查', 'warning');
+                        }
+                        
+                    } else {
+                        // 混合状态或检测失败
+                        updateMetric('uiVersion', '检测异常');
+                        updateMetric('versionMatch', '未知');
+                        log('❓ 版本检测结果异常，可能正在部署中', 'warning');
+                    }
+                    
+                    // 检查缓存状态
+                    const cacheControl = response.headers.get('cache-control');
+                    updateMetric('cacheStatus', cacheControl ? '有缓存' : '无缓存');
+                    
+                } else {
+                    updateMetric('accessibility', `错误 ${response.status}`);
+                    updateMetric('deployStatus', '访问失败');
+                    log(`❌ 网站访问失败: ${response.status}`, 'error');
+                }
+                
+            } catch (error) {
+                updateMetric('accessibility', '离线');
+                updateMetric('deployStatus', '连接失败');
+                log(`❌ 检查失败: ${error.message}`, 'error');
+            }
+        }
+
+        function startAutoMonitoring() {
+            if (monitoringInterval) {
+                clearInterval(monitoringInterval);
+            }
+            
+            log('🔄 开始自动监控（每30秒检查一次）...', 'info');
+            updateMetric('deployStatus', '自动监控中');
+            
+            monitoringInterval = setInterval(checkDeployment, 30000); // 每30秒检查一次
+            
+            // 立即执行一次检查
+            checkDeployment();
+        }
+
+        function stopAutoMonitoring() {
+            if (monitoringInterval) {
+                clearInterval(monitoringInterval);
+                monitoringInterval = null;
+                log('⏹️ 自动监控已停止', 'info');
+                updateMetric('deployStatus', '监控停止');
+            }
+        }
+
+        function openProductionSite() {
+            window.open(PROD_URL, '_blank');
+            log('🌐 已打开生产环境网站', 'info');
+        }
+
+        function clearResults() {
+            document.getElementById('testResults').innerHTML = '';
+            checkCounter = 0;
+            updateMetric('checkCount', '0');
+            log('🧹 监控日志已清理', 'info');
+        }
+
+        // 页面加载时自动开始监控
+        window.onload = function() {
+            log('📡 部署监控器已启动', 'info');
+            log('🚀 强制部署已触发，开始监控版本更新...', 'info');
+            
+            // 更新部署时间
+            document.getElementById('deployTime').textContent = new Date().toLocaleString();
+            
+            // 自动开始监控
+            setTimeout(startAutoMonitoring, 1000);
+        };
+
+        // 页面关闭时清理定时器
+        window.onbeforeunload = function() {
+            if (monitoringInterval) {
+                clearInterval(monitoringInterval);
+            }
+        };
+    </script>
+</body>
+</html>

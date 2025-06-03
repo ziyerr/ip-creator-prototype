@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>部署验证工具</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        .container {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 30px;
+            border-radius: 15px;
+            backdrop-filter: blur(10px);
+        }
+        .status {
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 8px;
+            font-weight: bold;
+        }
+        .success { background: rgba(34, 197, 94, 0.2); border: 2px solid #22c55e; }
+        .warning { background: rgba(251, 191, 36, 0.2); border: 2px solid #fbbf24; }
+        .error { background: rgba(239, 68, 68, 0.2); border: 2px solid #ef4444; }
+        .info { background: rgba(59, 130, 246, 0.2); border: 2px solid #3b82f6; }
+        button {
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: bold;
+            margin: 5px;
+            transition: transform 0.2s;
+        }
+        button:hover {
+            transform: translateY(-2px);
+        }
+        .test-results {
+            max-height: 500px;
+            overflow-y: auto;
+            background: rgba(0, 0, 0, 0.2);
+            padding: 15px;
+            border-radius: 8px;
+            margin: 15px 0;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+        }
+        .deployment-info {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }
+        .deployment-item {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 15px;
+            border-radius: 8px;
+        }
+        .deployment-item h4 {
+            margin-top: 0;
+            color: #fbbf24;
+        }
+        .metric {
+            font-size: 14px;
+            margin: 5px 0;
+        }
+        .metric-value {
+            color: #60a5fa;
+            font-weight: bold;
+        }
+        .comparison {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin: 20px 0;
+        }
+        .comparison-item {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 15px;
+            border-radius: 8px;
+        }
+        .comparison-item h4 {
+            margin-top: 0;
+        }
+        .before { border-left: 4px solid #ef4444; }
+        .after { border-left: 4px solid #22c55e; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 部署验证工具</h1>
+        
+        <div class="status info">
+            <strong>🎯 验证目标:</strong> 确认生产环境修复已部署成功<br>
+            <strong>📊 检查内容:</strong> API修复、文件处理、错误处理<br>
+            <strong>⏰ 部署时间:</strong> <span id="deployTime">刚刚推送</span>
+        </div>
+
+        <div class="comparison">
+            <div class="comparison-item before">
+                <h4>❌ 修复前状态</h4>
+                <p>• "a.arrayBuffer is not a function" 错误<br>
+                • 所有图片生成失败<br>
+                • 500 服务器错误<br>
+                • 变量作用域问题<br>
+                • 演示模式掩盖真实问题</p>
+            </div>
+            
+            <div class="comparison-item after">
+                <h4>✅ 修复后预期</h4>
+                <p>• 文件处理正常工作<br>
+                • arrayBuffer 方法可用<br>
+                • 详细错误日志<br>
+                • 真实API错误暴露<br>
+                • 多种文件处理备用方案</p>
+            </div>
+        </div>
+
+        <div class="deployment-info">
+            <div class="deployment-item">
+                <h4>🌐 生产环境</h4>
+                <div class="metric">状态: <span class="metric-value" id="prodStatus">检查中...</span></div>
+                <div class="metric">响应时间: <span class="metric-value" id="prodLatency">-</span></div>
+                <div class="metric">部署版本: <span class="metric-value" id="deployVersion">-</span></div>
+            </div>
+            
+            <div class="deployment-item">
+                <h4>🔧 API 状态</h4>
+                <div class="metric">文件处理: <span class="metric-value" id="fileProcessing">未测试</span></div>
+                <div class="metric">错误类型: <span class="metric-value" id="errorType">-</span></div>
+                <div class="metric">修复状态: <span class="metric-value" id="fixStatus">验证中</span></div>
+            </div>
+            
+            <div class="deployment-item">
+                <h4>📊 测试结果</h4>
+                <div class="metric">成功率: <span class="metric-value" id="successRate">0%</span></div>
+                <div class="metric">错误数: <span class="metric-value" id="errorCount">0</span></div>
+                <div class="metric">总测试: <span class="metric-value" id="totalTests">0</span></div>
+            </div>
+            
+            <div class="deployment-item">
+                <h4>⏱️ 部署信息</h4>
+                <div class="metric">推送时间: <span class="metric-value" id="pushTime">-</span></div>
+                <div class="metric">部署状态: <span class="metric-value" id="deployStatus">部署中</span></div>
+                <div class="metric">预计完成: <span class="metric-value" id="estimatedTime">2-3分钟</span></div>
+            </div>
+        </div>
+
+        <div>
+            <button onclick="checkDeploymentStatus()">🔍 检查部署状态</button>
+            <button onclick="testProductionAPI()">🧪 测试生产API</button>
+            <button onclick="runFullVerification()">🚀 完整验证</button>
+            <button onclick="openProductionSite()">🌐 打开生产网站</button>
+            <button onclick="clearResults()">🧹 清理结果</button>
+        </div>
+
+        <div class="test-results" id="testResults"></div>
+    </div>
+
+    <script>
+        const PROD_URL = 'https://ip-creator-ziyerrs-projects.vercel.app';
+        const GITHUB_REPO = 'https://api.github.com/repos/ziyerr/ip-creator-prototype/commits/main';
+        let testImage = null;
+        let testResults = { total: 0, success: 0, errors: 0 };
+
+        function log(message, type = 'info') {
+            const results = document.getElementById('testResults');
+            const div = document.createElement('div');
+            div.className = `status ${type}`;
+            div.innerHTML = `<strong>${new Date().toLocaleTimeString()}:</strong> ${message}`;
+            results.appendChild(div);
+            results.scrollTop = results.scrollHeight;
+        }
+
+        function updateMetric(id, value) {
+            const element = document.getElementById(id);
+            if (element) {
+                element.textContent = value;
+            }
+        }
+
+        async function checkDeploymentStatus() {
+            log('🔍 检查部署状态...', 'info');
+            
+            try {
+                // 检查生产环境可访问性
+                const startTime = Date.now();
+                const response = await fetch(PROD_URL, { 
+                    method: 'HEAD',
+                    signal: AbortSignal.timeout(10000)
+                });
+                const endTime = Date.now();
+                
+                if (response.ok) {
+                    updateMetric('prodStatus', '在线');
+                    updateMetric('prodLatency', `${endTime - startTime}ms`);
+                    log('✅ 生产环境在线', 'success');
+                } else {
+                    updateMetric('prodStatus', `错误 ${response.status}`);
+                    log(`❌ 生产环境响应异常: ${response.status}`, 'error');
+                }
+                
+                // 检查最新提交信息
+                try {
+                    const commitResponse = await fetch(GITHUB_REPO);
+                    const commitData = await commitResponse.json();
+                    
+                    if (commitData.commit) {
+                        const commitTime = new Date(commitData.commit.committer.date);
+                        const commitMessage = commitData.commit.message.split('\n')[0];
+                        
+                        updateMetric('pushTime', commitTime.toLocaleString());
+                        updateMetric('deployVersion', commitData.sha.substring(0, 7));
+                        
+                        log(`📝 最新提交: ${commitMessage}`, 'info');
+                        log(`🕐 提交时间: ${commitTime.toLocaleString()}`, 'info');
+                        
+                        // 估算部署状态
+                        const timeSinceCommit = Date.now() - commitTime.getTime();
+                        if (timeSinceCommit < 3 * 60 * 1000) { // 3分钟内
+                            updateMetric('deployStatus', '可能仍在部署');
+                            updateMetric('estimatedTime', '1-2分钟');
+                        } else {
+                            updateMetric('deployStatus', '应该已完成');
+                            updateMetric('estimatedTime', '已完成');
+                        }
+                    }
+                } catch (githubError) {
+                    log('⚠️ 无法获取GitHub提交信息', 'warning');
+                }
+                
+            } catch (error) {
+                updateMetric('prodStatus', '离线');
+                log(`❌ 检查部署状态失败: ${error.message}`, 'error');
+            }
+        }
+
+        async function createTestImage() {
+            if (testImage) return testImage;
+            
+            return new Promise((resolve) => {
+                const canvas = document.createElement('canvas');
+                canvas.width = 200;
+                canvas.height = 200;
+                const ctx = canvas.getContext('2d');
+                
+                // 绘制测试图案
+                const gradient = ctx.createLinearGradient(0, 0, 200, 200);
+                gradient.addColorStop(0, '#667eea');
+                gradient.addColorStop(1, '#764ba2');
+                ctx.fillStyle = gradient;
+                ctx.fillRect(0, 0, 200, 200);
+                
+                ctx.fillStyle = 'white';
+                ctx.font = 'bold 18px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText('部署验证', 100, 70);
+                ctx.font = '14px Arial';
+                ctx.fillText('测试图片', 100, 100);
+                ctx.fillText(new Date().toLocaleTimeString(), 100, 130);
+                
+                canvas.toBlob((blob) => {
+                    if (blob) {
+                        testImage = new File([blob], 'deployment-test.png', { type: 'image/png' });
+                        resolve(testImage);
+                    } else {
+                        resolve(null);
+                    }
+                }, 'image/png');
+            });
+        }
+
+        async function testProductionAPI() {
+            log('🧪 开始测试生产环境API...', 'info');
+            
+            const image = await createTestImage();
+            if (!image) {
+                log('❌ 无法创建测试图片', 'error');
+                return;
+            }
+            
+            testResults.total++;
+            updateMetric('totalTests', testResults.total);
+            
+            try {
+                const formData = new FormData();
+                formData.append('prompt', '部署验证测试 - 检查arrayBuffer修复');
+                formData.append('image', image);
+                formData.append('variationSeed', '0');
+
+                log(`📡 发送API请求...`, 'info');
+                
+                const startTime = Date.now();
+                const response = await fetch(`${PROD_URL}/api/generate-single-image`, {
+                    method: 'POST',
+                    body: formData
+                });
+                const endTime = Date.now();
+                
+                log(`⏱️ API响应时间: ${endTime - startTime}ms`, 'info');
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    testResults.success++;
+                    updateMetric('fileProcessing', '正常');
+                    updateMetric('errorType', '无错误');
+                    updateMetric('fixStatus', '修复成功');
+                    
+                    log('🎉 API测试成功！arrayBuffer错误已修复', 'success');
+                    log(`📄 响应: ${JSON.stringify(result).substring(0, 100)}...`, 'success');
+                    
+                } else {
+                    testResults.errors++;
+                    updateMetric('errorType', '仍有错误');
+                    
+                    log(`❌ API测试失败: ${response.status}`, 'error');
+                    log(`💥 错误详情: ${JSON.stringify(result)}`, 'error');
+                    
+                    // 分析错误类型
+                    if (result.details && result.details.includes('arrayBuffer')) {
+                        updateMetric('fixStatus', '修复失败');
+                        updateMetric('fileProcessing', 'arrayBuffer错误');
+                        log('🚨 arrayBuffer错误仍然存在！需要进一步调试', 'error');
+                    } else {
+                        updateMetric('fixStatus', '部分修复');
+                        updateMetric('fileProcessing', '其他错误');
+                        log('⚠️ arrayBuffer已修复，但存在其他问题', 'warning');
+                    }
+                }
+                
+            } catch (error) {
+                testResults.errors++;
+                log(`❌ API请求异常: ${error.message}`, 'error');
+                updateMetric('errorType', '网络错误');
+            }
+            
+            // 更新统计
+            const successRate = testResults.total > 0 ? (testResults.success / testResults.total * 100).toFixed(0) : 0;
+            updateMetric('successRate', `${successRate}%`);
+            updateMetric('errorCount', testResults.errors);
+        }
+
+        async function runFullVerification() {
+            log('🚀 开始完整验证流程...', 'info');
+            
+            await checkDeploymentStatus();
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            
+            await testProductionAPI();
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            
+            // 总结验证结果
+            if (testResults.success > 0) {
+                log('✅ 部署验证完成：修复成功部署！', 'success');
+            } else if (testResults.errors > 0) {
+                log('❌ 部署验证完成：仍存在问题', 'error');
+            } else {
+                log('⚠️ 部署验证完成：需要更多测试', 'warning');
+            }
+        }
+
+        function openProductionSite() {
+            window.open(PROD_URL, '_blank');
+            log('🌐 已打开生产环境网站', 'info');
+        }
+
+        function clearResults() {
+            document.getElementById('testResults').innerHTML = '';
+            testResults = { total: 0, success: 0, errors: 0 };
+            
+            // 重置指标
+            ['prodStatus', 'prodLatency', 'deployVersion', 'fileProcessing', 'errorType', 'fixStatus', 'successRate', 'errorCount', 'totalTests', 'pushTime', 'deployStatus', 'estimatedTime'].forEach(id => {
+                updateMetric(id, '-');
+            });
+            
+            updateMetric('prodStatus', '检查中...');
+            updateMetric('fixStatus', '验证中');
+            updateMetric('deployStatus', '部署中');
+            updateMetric('successRate', '0%');
+            updateMetric('errorCount', '0');
+            updateMetric('totalTests', '0');
+            
+            log('🧹 验证结果已清理', 'info');
+        }
+
+        // 页面加载时自动检查
+        window.onload = function() {
+            log('🚀 部署验证工具已加载', 'info');
+            log('📝 将验证生产环境修复是否成功部署', 'info');
+            
+            // 更新部署时间
+            document.getElementById('deployTime').textContent = new Date().toLocaleString();
+            
+            // 自动检查部署状态
+            setTimeout(checkDeploymentStatus, 1000);
+        };
+    </script>
+</body>
+</html>
