@@ -81,8 +81,14 @@ export async function POST(req: NextRequest) {
     console.log(`🎨 使用变化策略 ${variationIndex + 1}: ${selectedVariation}`);
     
     // 🚀 调用麻雀API - 只使用真实API，不使用演示模式
-    const apiUrl = 'https://ismaque.org/v1/images/edits';
-    const apiKey = process.env.MAQUE_API_KEY || 'sk-5D59F8';
+    // 从环境变量读取配置
+    const apiUrl = process.env.MAQUE_API_URL || 'https://ismaque.org/v1/images/edits';
+    const apiKey = process.env.MAQUE_API_KEY;
+
+    if (!apiKey) {
+      console.error('❌ 缺少 MAQUE_API_KEY 环境变量');
+      throw new Error('服务器配置错误：缺少API密钥');
+    }
 
     // 🔍 API配置信息
     console.log('🔍 API配置信息:');

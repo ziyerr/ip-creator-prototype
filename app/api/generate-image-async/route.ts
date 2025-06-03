@@ -134,9 +134,16 @@ async function processImageGenerationTask(taskId: string, prompt: string, imageF
     task.status = 'processing';
     task.progress = 20;
 
-    // API配置
-    const apiUrl = 'https://ismaque.org/v1/images/edits';
-    const apiKey = process.env.SPARROW_API_KEY || 'sk-1eEdZF3JuFocE3eyrFBnmE1IgMFwbGcwPfMciRMdxF1Zl8Ke';
+    // API配置 - 从环境变量读取
+    const apiUrl = process.env.MAQUE_API_URL || 'https://ismaque.org/v1/images/edits';
+    const apiKey = process.env.MAQUE_API_KEY;
+
+    if (!apiKey) {
+      console.error('❌ 缺少 MAQUE_API_KEY 环境变量');
+      task.status = 'failed';
+      task.error = '服务器配置错误：缺少API密钥';
+      return;
+    }
     
     // 处理提示词
     let finalPrompt = prompt.replace('[REF_IMAGE]', 'the uploaded reference image');

@@ -28,8 +28,17 @@ export async function POST(req: NextRequest) {
     console.log('文件转换成功，缓冲区大小:', imageBuffer.length, 'bytes');
 
     // 🚀 调用麻雀API生成3张图片 - 只使用真实API，不使用演示模式
-    const apiUrl = 'https://ismaque.org/v1/images/edits';
-    const apiKey = process.env.MAQUE_API_KEY || 'sk-5D59F8';
+    // 从环境变量读取配置
+    const apiUrl = process.env.MAQUE_API_URL || 'https://ismaque.org/v1/images/edits';
+    const apiKey = process.env.MAQUE_API_KEY;
+
+    if (!apiKey) {
+      console.error('❌ 缺少 MAQUE_API_KEY 环境变量');
+      return Response.json({
+        error: '服务器配置错误：缺少API密钥',
+        details: '请联系管理员配置MAQUE_API_KEY环境变量'
+      }, { status: 500 });
+    }
     
     const generatedUrls: string[] = [];
     const totalImages = 3;
