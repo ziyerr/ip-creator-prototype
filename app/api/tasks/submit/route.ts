@@ -110,17 +110,42 @@ export async function POST(req: NextRequest) {
       body: requestBody,
     });
 
+    let rawErrorText = '';
     if (!response.ok) {
-      const errorText = await response.text();
-      console.error('❌ 麻雀API调用失败:', errorText);
-      throw new Error(`API请求失败 (${response.status}): ${errorText}`);
+      rawErrorText = await response.text();
+      console.error('❌ 麻雀API调用失败:', rawErrorText);
+      return NextResponse.json({
+        success: false,
+        error: `麻雀API请求失败 (${response.status})`,
+        details: rawErrorText
+      }, { status: 502 });
     }
 
-    const result = await response.json();
+    let result: any;
+    try {
+      result = await response.json();
+    } catch (parseErr) {
+      console.error('❌ 麻雀API响应非JSON:', parseErr);
+      return NextResponse.json({
+        success: false,
+        error: '麻雀API响应非JSON',
+        details: rawErrorText || String(parseErr)
+      }, { status: 502 });
+    }
     console.log('✅ 麻雀API响应成功:', result);
 
+    // 健壮校验 result.data
+    if (!result.data || !Array.isArray(result.data)) {
+      console.error('❌ 麻雀API响应格式异常:', result);
+      return NextResponse.json({
+        success: false,
+        error: '麻雀API响应格式异常',
+        details: JSON.stringify(result).substring(0, 500)
+      }, { status: 502 });
+    }
+
     // 提取图片数据并转换为data URL
-    const imageUrls = result.data?.map((item: any, index: number) => {
+    const imageUrls = result.data.map((item: any, index: number) => {
       if (item.b64_json) {
         // 将base64数据转换为data URL
         return `data:image/png;base64,${item.b64_json}`;
@@ -128,12 +153,16 @@ export async function POST(req: NextRequest) {
         // 如果是URL格式，直接使用
         return item.url;
       } else {
-        throw new Error(`图片数据格式错误: ${JSON.stringify(item).substring(0, 100)}...`);
+        return undefined;
       }
-    }) || [];
+    }).filter(Boolean);
 
     if (imageUrls.length === 0) {
-      throw new Error('API返回的数据中没有图片数据');
+      return NextResponse.json({
+        success: false,
+        error: 'API返回的数据中没有图片数据',
+        details: JSON.stringify(result).substring(0, 500)
+      }, { status: 502 });
     }
 
     // 立即返回成功结果
