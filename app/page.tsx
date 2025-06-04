@@ -29,6 +29,7 @@ export default function HomePage() {
   const [generationStage, setGenerationStage] = useState("")
   const [generatedImages, setGeneratedImages] = useState<Array<{ id: string; url: string; style: string }>>([])
   const [showResults, setShowResults] = useState(false)
+  const [selectedImageId, setSelectedImageId] = useState<string | null>(null)
   const [errorMessage, setErrorMessage] = useState("")
   const [imageLoadStates, setImageLoadStates] = useState<Record<string, 'loading' | 'loaded' | 'error'>>({})
   const [storageInfo, setStorageInfo] = useState<{ used: number; total: number } | null>(null)
@@ -711,11 +712,25 @@ export default function HomePage() {
                   <div className={`grid gap-6 ${
                     showResults ? 'grid-cols-1 lg:grid-cols-2 xl:grid-cols-3' : 'grid-cols-1'
                   }`}>
-                    {generatedImages.map((image, index) => (
-                      <div
-                        key={image.id}
-                        className="border-2 border-slate-200 rounded-2xl p-4 hover:shadow-xl transition-all cursor-pointer bg-white/90 backdrop-blur group relative overflow-hidden hover:border-blue-400/60"
-                      >
+                    {generatedImages.map((image, index) => {
+                      const isSelected = selectedImageId === image.id;
+                      const isOtherSelected = selectedImageId && selectedImageId !== image.id;
+
+                      return (
+                        <div
+                          key={image.id}
+                          onClick={() => setSelectedImageId(image.id)}
+                          className={`
+                            border-2 rounded-2xl p-4 cursor-pointer bg-white/90 backdrop-blur group relative overflow-hidden
+                            transition-all duration-500 ease-in-out
+                            ${isSelected
+                              ? 'border-blue-500 shadow-2xl scale-105 ring-4 ring-blue-200/50 bg-blue-50/80'
+                              : isOtherSelected
+                                ? 'border-slate-200 shadow-md scale-95 opacity-75'
+                                : 'border-slate-200 hover:shadow-xl hover:border-blue-400/60 hover:scale-102'
+                            }
+                          `}
+                        >
                         <div className={`${showResults ? 'flex flex-col items-center' : 'flex items-center gap-4'}`}>
                           {/* 图片容器 */}
                           <div className="relative flex-shrink-0 w-full">
@@ -788,10 +803,19 @@ export default function HomePage() {
                               </div>
                             )}
                             
+                            {/* 选中状态指示器 */}
+                            {isSelected && (
+                              <div className="absolute top-2 right-2 bg-blue-500 text-white rounded-full p-2 shadow-lg animate-pulse">
+                                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                                  <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                </svg>
+                              </div>
+                            )}
+
                             {/* hover效果 */}
-                            {imageLoadStates[image.id] === 'loaded' && (
+                            {imageLoadStates[image.id] === 'loaded' && !isSelected && (
                               <div className="absolute inset-0 flex items-center justify-center bg-white/80 opacity-0 group-hover:opacity-100 transition-opacity duration-300 rounded-xl">
-                                <span className="text-xs text-blue-600 font-semibold">点击查看大图</span>
+                                <span className="text-xs text-blue-600 font-semibold">点击选择此图片</span>
                               </div>
                             )}
                           </div>
@@ -806,7 +830,8 @@ export default function HomePage() {
                             </p>
                             <div className={`flex gap-2 ${showResults ? 'justify-center flex-wrap' : ''}`}>
                               <button
-                                onClick={() => {
+                                onClick={(e) => {
+                                  e.stopPropagation();
                                   // 打开大图预览
                                   window.open(image.url, '_blank');
                                 }}
@@ -815,7 +840,8 @@ export default function HomePage() {
                                 查看大图
                               </button>
                               <button
-                                onClick={() => {
+                                onClick={(e) => {
+                                  e.stopPropagation();
                                   // 下载图片
                                   const link = document.createElement('a');
                                   link.href = image.url;
@@ -827,10 +853,33 @@ export default function HomePage() {
                                 下载图片
                               </button>
                             </div>
+
+                            {/* 选择按钮 */}
+                            {isSelected && (
+                              <div className="mt-4 w-full">
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    // 这里可以添加选择后的逻辑，比如跳转到导出页面
+                                    router.push(`/export?selectedImage=${image.id}`);
+                                  }}
+                                  className="w-full bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 text-white py-3 px-6 rounded-xl font-bold text-lg shadow-lg transition-all duration-300 transform hover:scale-105 flex items-center justify-center space-x-2 border-2 border-white/20"
+                                  style={{
+                                    boxShadow: '0 8px 24px 0 rgba(59, 130, 246, 0.3)'
+                                  }}
+                                >
+                                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                  </svg>
+                                  <span>我选这个</span>
+                                </button>
+                              </div>
+                            )}
                           </div>
                         </div>
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                   
                   {/* 突出的导出按钮 */}
