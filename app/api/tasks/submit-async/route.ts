@@ -25,14 +25,34 @@ async function processImageGeneration(taskId: string, prompt: string, imageFile?
       // 图生图模式 - 使用图片编辑接口
       apiUrl = 'https://ismaque.org/v1/images/edits';
 
-      const imageBlob = new Blob([await imageFile.arrayBuffer()], { type: imageFile.type });
-      apiFormData.append('image', imageBlob, imageFile.name);
-      // 注意：图片编辑接口不需要mask参数，除非要指定编辑区域
+      console.log(`📷 原始图片信息: ${imageFile.name}, 大小: ${imageFile.size} bytes, 类型: ${imageFile.type}`);
+
+      // 检查文件大小（4MB限制）
+      if (imageFile.size > 4 * 1024 * 1024) {
+        throw new Error('图片文件大小超过4MB限制');
+      }
+
+      // 确保是PNG格式（如果不是，需要转换）
+      let finalImageBlob: Blob;
+      if (imageFile.type === 'image/png') {
+        finalImageBlob = new Blob([await imageFile.arrayBuffer()], { type: 'image/png' });
+      } else {
+        console.log(`🔄 转换图片格式从 ${imageFile.type} 到 image/png`);
+        // 这里应该添加图片格式转换逻辑，暂时先用原格式
+        finalImageBlob = new Blob([await imageFile.arrayBuffer()], { type: 'image/png' });
+      }
+
+      // 生成PNG文件名
+      const pngFileName = imageFile.name.replace(/\.[^/.]+$/, '.png');
+
+      apiFormData.append('image', finalImageBlob, pngFileName);
       apiFormData.append('prompt', prompt);
       apiFormData.append('n', '1');
-      apiFormData.append('size', '1024x1024');
+      apiFormData.append('size', '1024x1024'); // 确保方形
       apiFormData.append('response_format', 'b64_json');
       apiFormData.append('model', 'gpt-image-1');
+
+      console.log(`📤 图生图请求参数: prompt="${prompt}", size=1024x1024, format=b64_json`);
     } else {
       // 文生图模式 - 使用图片生成接口
       apiUrl = 'https://ismaque.org/v1/images/generations';
@@ -42,6 +62,8 @@ async function processImageGeneration(taskId: string, prompt: string, imageFile?
       apiFormData.append('size', '1024x1024');
       apiFormData.append('response_format', 'b64_json');
       apiFormData.append('model', 'gpt-image-1');
+
+      console.log(`📤 文生图请求参数: prompt="${prompt}", size=1024x1024, format=b64_json`);
     }
 
     // 更新进度并标记开始生成

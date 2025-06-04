@@ -35,6 +35,15 @@ export async function POST(req: NextRequest) {
     apiFormData.append('response_format', 'b64_json');
     apiFormData.append('model', 'gpt-image-1');
 
+    console.log('🧪 测试API请求参数:', {
+      url: apiUrl,
+      prompt,
+      n: 1,
+      size: '1024x1024',
+      response_format: 'b64_json',
+      model: 'gpt-image-1'
+    });
+
     console.log('📤 发送请求到麻雀API...');
 
     // 调用麻雀API
